@@ -39,9 +39,12 @@ Thumbs.db
 
 # ── Qwen3-ASR 模型与引擎（大文件，不入库） ──
 qwen3_asr_models/
-qwen3_asr_gguf_src/qwen_asr_gguf/bin/*.zip
+# llama.cpp 二进制（zip 与解压的 DLL）
+qwen3_asr_gguf_src/qwen_asr_gguf/bin/
+qwen3_asr_gguf_src/qwen_asr_gguf/inference/bin/
 *.onnx
 *.gguf
+*.dll
 
 # ── Docker 本地覆盖 ──
 docker-compose.override.yml
