@@ -976,12 +976,30 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
     import numpy as np
     from qwen_asr_gguf.inference.audio import load_audio
     audio = load_audio(wav_path, sample_rate=16000)
+
+    # 上下文提示（热词引导）：注入内容类型/领域词，显著降低同音字错误。
+    # 例：识别"夹子音"时，context 含"直播带货"可引导模型偏向该领域词汇。
+    # 可通过环境变量 QWEN3_ASR_CONTEXT 自定义（默认通用直播带货场景）。
+    qwen_context = os.environ.get(
+        "QWEN3_ASR_CONTEXT",
+        "这是中文短视频直播带货内容。注意识别网络用语和口语，"
+        "例如\"夹子音\"\"破价\"\"家人们\"\"闭眼入\"等，避免同音字误写。"
+    )
+    # 采样温度：默认 0.4 → 0.3 更保守，减少同音字发散。
+    # 实测：0.2 对个别词过保守（半甜→半田），0.3 平衡准确与自然。
+    # 可经 QWEN3_ASR_TEMPERATURE 环境变量调。
+    try:
+        qwen_temp = float(os.environ.get("QWEN3_ASR_TEMPERATURE", "0.3"))
+    except ValueError:
+        qwen_temp = 0.3
+
     res = _qwen3_asr_gguf_engine.asr(
         audio=audio,
-        context="",
+        context=qwen_context,
         language="Chinese",
         chunk_size_sec=40.0,
         memory_chunks=2,
+        temperature=qwen_temp,
     )
 
     full_text = res.text or ""
