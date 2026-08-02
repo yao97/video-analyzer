@@ -1,0 +1,11 @@
+transformers==4.57.6
+onnxruntime-directml
+gguf
+torch
+nagisa
+librosa
+soundfile
+accelerate
+onnxscript
+srt
+sentencepiece

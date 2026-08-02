@@ -23,6 +23,28 @@
 └── archive/                   # 旧版参考（已归档）
 ```
 
+## 语音识别引擎（双引擎可选）
+
+上传视频后**先提取音频，不自动转写**；在"语音转写"Tab 选择识别引擎后点击「开始转写」。
+
+| 引擎 | 说明 | 硬件 | 时间戳 |
+|------|------|------|--------|
+| **Whisper**（默认） | openai-whisper，tiny/base/small/medium 四档 | CPU | ✅ 句子级 |
+| **Qwen3-ASR-1.7B** | 本地大模型，中英混合/方言识别更强 | GPU（DirectML+Vulkan）或 CPU | ✅ 字级（ForceAligner 对齐） |
+
+### Qwen3-ASR-1.7B 部署（可选）
+
+1. 安装依赖：`pip install onnxruntime-directml pydub scipy gguf srt`
+2. 克隆引擎：`git clone https://github.com/HaujetZhao/Qwen3-ASR-GGUF.git backend/qwen3_asr_gguf_src`
+3. 下载模型（Model Release，解压到 `backend/qwen3_asr_models/`）：
+   - `Qwen3-ASR-1.7B-gguf.zip`（1.3GB）
+   - `Qwen3-ForceAligner-0.6B-gguf.zip`（481MB，时间戳必需）
+4. 下载 llama.cpp Windows Vulkan 二进制，解压 DLL 到 `backend/qwen3_asr_gguf_src/qwen_asr_gguf/inference/bin/`
+   - ⚠️ 用 **b8996** 版本（最新版 b10229+ 与引擎不兼容，会 access violation）
+5. 重启服务，前端引擎下拉选择 Qwen3-ASR 即可
+
+> 引擎首次运行加载模型约 5-10 秒；RTX 3050 上 52s 音频约 4 秒转写（RTF 0.077）。
+
 ## 本地运行（不装 Docker）
 
 ```bash

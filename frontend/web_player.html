@@ -339,12 +339,17 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
           <div class="transcribe-steps" id="transcribeSteps">
             <div class="transcribe-step"><span class="step-icon wait" id="stepUpload">1</span><span class="step-text wait">上传视频</span></div>
             <div class="transcribe-step"><span class="step-icon wait" id="stepExtract">2</span><span class="step-text wait">提取音频</span></div>
-            <div class="transcribe-step"><span class="step-icon wait" id="stepWhisper">3</span><span class="step-text wait">Whisper 转写</span></div>
+            <div class="transcribe-step"><span class="step-icon wait" id="stepWhisper">3</span><span class="step-text wait">语音转写</span></div>
             <div class="transcribe-step"><span class="step-icon wait" id="stepDone">4</span><span class="step-text wait">完成</span></div>
           </div>
           <!-- Whisper 进度条 -->
           
 <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
+<span style="font-size:0.73rem;color:#6b7084;">识别引擎:</span>
+<select id="asrEngineSelect" onchange="onAsrEngineChange()" style="font-size:0.73rem;padding:0.3rem 0.5rem;background:#1a1d27;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;font-family:inherit;">
+<option value="whisper" selected>Whisper（本地转写）</option>
+<option value="qwen3_asr">Qwen3-ASR（本地大模型）</option>
+</select>
 <span style="font-size:0.73rem;color:#6b7084;">Whisper 模型:</span>
 <select id="whisperModelSelect" onchange="onWhisperModelChange()" style="font-size:0.73rem;padding:0.3rem 0.5rem;background:#1a1d27;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;font-family:inherit;">
 <option value="tiny">Tiny — 最快</option>
@@ -352,6 +357,8 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
 <option value="small" selected>Small — 推荐</option>
 <option value="medium">Medium — 最准确</option>
 </select>
+<span id="qwenAsrModelHint" style="font-size:0.68rem;color:#4a4d63;display:none;">Qwen3-ASR-1.7B（首次使用自动下载权重）</span>
+<button id="btnStartTranscribe" class="btn btn-primary" onclick="startTranscribeWithEngine()" style="display:none;font-size:0.73rem;padding:0.35rem 0.9rem;">&#127916; 开始转写</button>
 <button id="btnReTranscribe" class="btn btn-secondary" onclick="reTranscribe()" style="display:none;font-size:0.73rem;padding:0.35rem 0.8rem;">&#128260; 重新转写</button>
 <span id="whisperModelHint" style="font-size:0.68rem;color:#4a4d63;"></span>
 </div>
@@ -687,7 +694,7 @@ async function startTranscription(file, duration) {
   const formData = new FormData();
   formData.append('video', file);
   formData.append('duration', String(duration));
-  // 传递选中的 Whisper 模型
+  // 传递选中的 Whisper 模型（上传阶段暂不转写，仅记录）
   const modelSelect = document.getElementById('whisperModelSelect');
   if (modelSelect) formData.append('model', modelSelect.value);
 
@@ -703,6 +710,57 @@ async function startTranscription(file, duration) {
     console.error('Transcribe start failed:', e);
     return null;
   }
+}
+
+// ── 识别引擎选择 ──
+let selectedAsrEngine = 'whisper';
+let autoResumeTranscribe = false;  // reTranscribe 时自动用上次引擎继续
+
+function onAsrEngineChange() {
+  const sel = $('asrEngineSelect');
+  if (!sel) return;
+  selectedAsrEngine = sel.value;
+  const qwHint = $('qwenAsrModelHint');
+  const wSel = $('whisperModelSelect');
+  if (qwHint) qwHint.style.display = selectedAsrEngine === 'qwen3_asr' ? '' : 'none';
+  if (wSel) wSel.style.display = selectedAsrEngine === 'whisper' ? '' : 'none';
+}
+
+// 音频就绪后用户点击「开始转写」
+async function startTranscribeWithEngine() {
+  if (!transcribeJobId) { toast('请先上传视频', 'error'); return; }
+  const engine = selectedAsrEngine;
+  const model = engine === 'whisper'
+    ? ($('whisperModelSelect')?.value || 'small')
+    : 'Qwen/Qwen3-ASR-1.7B';
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/transcribe-start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_id: transcribeJobId, engine: engine, model: model}),
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    hide('btnStartTranscribe');
+    setStep('stepExtract', 'done', '完成');
+    setStep('stepWhisper', 'running');
+    setBadge('badgeSpeech', 'running', engine === 'qwen3_asr' ? 'Qwen3-ASR 转写中' : '转写中');
+    updateWhisperProgress(15, engine === 'qwen3_asr' ? 'Qwen3-ASR 识别中...' : 'Whisper 转写中...', 0);
+    show('whisperProgressWrap');
+    // Poll every 2s
+    transcribePollTimer = setInterval(() => pollTranscribeResult(transcribeJobId), 2000);
+    pollTranscribeResult(transcribeJobId);
+  } catch(e) {
+    console.error('Start transcribe failed:', e);
+    toast('启动转写失败: ' + e.message, 'error');
+  }
+}
+
+// 音频就绪时显示引擎选择区
+function showAsrEngineSelector() {
+  hide('whisperProgressWrap');
+  show('btnStartTranscribe');
+  onAsrEngineChange();
 }
 
 async function pollTranscribeResult(jobId) {
@@ -737,6 +795,26 @@ async function pollTranscribeResult(jobId) {
       setStep('stepWhisper', 'wait');
       setStep('stepDone', 'wait');
       updateWhisperProgress(statusData.progress || 5, statusData.detail, statusData.elapsed_sec);
+    } else if (statusData.status === 'audio_ready') {
+      // 音频提取完成，停止轮询，等待用户选择引擎开始转写
+      clearInterval(transcribePollTimer);
+      transcribePollTimer = null;
+      setStep('stepUpload', 'done', '完成');
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'wait');
+      setStep('stepDone', 'wait');
+      if (autoResumeTranscribe) {
+        // 重新转写：自动用上次引擎继续，无需再点按钮
+        autoResumeTranscribe = false;
+        startTranscribeWithEngine();
+        return;
+      }
+      setBadge('badgeSpeech', 'running', '音频就绪');
+      hideWhisperProgress(20);
+      showAsrEngineSelector();
+      // 显示提示
+      $('whisperDetail').textContent = '音频提取完成，请选择识别引擎并点击「开始转写」';
+      return;
     } else if (statusData.status === 'transcribing') {
       setStep('stepExtract', 'done', '完成');
       setStep('stepWhisper', 'running');
@@ -935,12 +1013,11 @@ async function processFile(file) {
     if (jobId) {
       transcribeJobId = jobId;
       setStep('stepUpload','done','完成');
-      setBadge('badgeSpeech','running','转写中');
-      updateWhisperProgress(40, null);  // 显示进度条，每 2s 轮询更新
+      setBadge('badgeSpeech','running','音频提取中');
+      updateWhisperProgress(10, '正在提取音频...', 0);
 
-      // Poll every 2s
+      // 轮询等音频提取完成（audio_ready），完成后显示引擎选择，由用户触发转写
       transcribePollTimer = setInterval(() => pollTranscribeResult(jobId), 2000);
-      // Also start immediately
       pollTranscribeResult(jobId);
     } else {
       // Backend unavailable
@@ -1267,6 +1344,7 @@ function onWhisperModelChange() {
 async function reTranscribe() {
   if (!transcribeFile) { toast('请先上传视频', 'error'); return; }
   if (transcribePollTimer) { clearInterval(transcribePollTimer); transcribePollTimer = null; }
+  autoResumeTranscribe = true;  // 音频就绪后自动用上次引擎继续转写
   speechResult = null;
   setBadge('badgeSpeech','running','重新转写中');
   setStep('stepUpload','running');
@@ -1287,9 +1365,10 @@ async function reTranscribe() {
   if (jobId) {
     transcribeJobId = jobId;
     setStep('stepUpload','done','完成');
-    setBadge('badgeSpeech','running','转写中');
-    updateWhisperProgress(5, '任务已创建，等待处理...', 0);
+    setBadge('badgeSpeech','running','音频提取中');
+    updateWhisperProgress(5, '任务已创建，正在提取音频...', 0);
     $('whisperModelHint').textContent = '';
+    // 等 audio_ready 后自动用上次选择的引擎继续转写
     transcribePollTimer = setInterval(function() { pollTranscribeResult(jobId); }, 2000);
     pollTranscribeResult(jobId);
   } else {

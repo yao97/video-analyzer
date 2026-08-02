@@ -18,5 +18,12 @@ requests>=2.31.0
 # ── torch（CPU 版，Whisper 推理） ──
 torch>=2.0.0
 
+# ── Qwen3-ASR-GGUF 引擎（本地大模型语音识别，DirectML GPU 加速） ──
+onnxruntime-directml>=1.20.0
+pydub>=0.25.0
+scipy>=1.10.0
+gguf>=0.10.0
+srt>=3.5.0
+
 # ── tokenizer（Whisper 依赖） ──
 tiktoken>=0.5.0

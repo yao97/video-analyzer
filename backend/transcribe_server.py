@@ -20,6 +20,11 @@ Video Content Analyzer - Python Backend
 
 import os
 
+# 必须在导入 onnxruntime/torch 之前设置：
+# Qwen3-ASR 的 onnxruntime 带 libiomp5md.dll，与 torch 的 libomp140 冲突会导致
+# OMP Error #15 进程崩溃。此环境变量允许重复加载 OpenMP 运行时。
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import uuid
 
 import json
@@ -48,6 +53,7 @@ _whisper_models = {}  # key "model_name#instance_id" -> model instance
 _whisper_model_lock = threading.Lock()
 _whisper_model_name = "small"  # default, overridden by --model arg
 _ffmpeg_exe = None
+_qwen3_asr_gguf_engine = None  # Qwen3-ASR GGUF 引擎实例（懒加载）
 
 # 并发转写信号量：限制同时进行的转写任务数。
 # 多任务并发会触发多个 Whisper 实例同时推理，torch 底层线程竞争导致部分分片
@@ -777,138 +783,114 @@ def extract_keywords(text: str) -> dict:
 
 # ── 转写任务入口（在新线程中运行）──
 
-def run_transcription(job_id: str, video_path: str, duration: float, model_name: str = None):
+def run_audio_extract(job_id: str, video_path: str, duration: float):
+    """上传后第一步：仅提取音频，不自动转写。提取完成状态置为 audio_ready，
+    由前端选择识别引擎（Whisper / Qwen3-ASR）后调用 /api/transcribe-start 启动转写。"""
+    try:
+        jobs[job_id]["status"] = "extracting"
+        jobs[job_id]["progress"] = 8
+        jobs[job_id]["detail"] = "正在提取音频..."
 
-    # 并发限制：超出上限的任务排队等待（Whisper 多实例并发会导致分片解码失败，强制串行）
-    # 排队期间显示 waiting 状态，前端可见
+        wav_path = str(TEMP_DIR / f"{job_id}.wav")
+        ok = extract_audio(video_path, wav_path, duration)
+
+        if not ok or not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100:
+            # 检查是否是静音视频（无音轨）
+            try:
+                import imageio_ffmpeg
+                ff = imageio_ffmpeg.get_ffmpeg_exe()
+                check = subprocess.run(
+                    f'"{ff}" -i "{video_path}" -map 0:a -f null - 2>&1',
+                    capture_output=True, text=True, timeout=10,
+                    shell=True, encoding='utf-8', errors='replace'
+                )
+                no_audio = '0 streams' in check.stderr or 'does not contain' in check.stderr
+            except:
+                no_audio = False
+
+            jobs[job_id]["status"] = "no_audio"
+            jobs[job_id]["result"] = {
+                "text": "",
+                "segments": [],
+                "error": "无法提取音频（该视频无音轨，为纯画面视频）" if no_audio else "无法提取音频（可能为静音视频）",
+                "no_audio": True
+            }
+            jobs[job_id]["progress"] = 100
+            jobs[job_id]["detail"] = "无音频"
+            return
+
+        # 音频就绪，等待用户选择模型
+        jobs[job_id]["status"] = "audio_ready"
+        jobs[job_id]["progress"] = 20
+        jobs[job_id]["detail"] = "音频提取完成，请选择识别模型开始转写"
+        jobs[job_id]["wav_path"] = wav_path
+        print(f"[Audio] job {job_id} 音频就绪: {wav_path}", flush=True)
+
+    except Exception as e:
+        import traceback, datetime
+        traceback.print_exc()
+        try:
+            with open(str(TEMP_DIR / 'transcribe_debug.log'), 'a', encoding='utf-8') as f:
+                f.write(f"\n[{datetime.datetime.now()}] JOB {job_id} AUDIO_EXTRACT FAILED\n{traceback.format_exc()}\n")
+        except Exception:
+            pass
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["error"] = str(e)
+        jobs[job_id]["progress"] = 100
+
+
+def run_transcribe_with_engine(job_id: str, engine: str = "whisper", model_name: str = None):
+    """第二步：用户选择识别引擎后启动转写。engine: whisper / qwen3_asr。"""
+
+    # 并发限制：Whisper 多实例并发不安全，强制串行（Qwen3-ASR 同样串行避免显存竞争）
     if _transcribe_semaphore.acquire(blocking=False):
-        pass  # 拿到槽位，直接开始
+        pass
     else:
         jobs[job_id]["status"] = "waiting"
         jobs[job_id]["progress"] = 2
         jobs[job_id]["detail"] = "前面有转写任务进行中，正在排队等待..."
         print(f"[Queue] job {job_id} 排队等待转写槽位...", flush=True)
-        _transcribe_semaphore.acquire()  # 阻塞等待
+        _transcribe_semaphore.acquire()
 
     try:
-
-        jobs[job_id]["status"] = "extracting"
-
-        jobs[job_id]["progress"] = 8
-
-        jobs[job_id]["detail"] = "正在提取音频..."
-
-
-
-        # 1. 提取音频
-
-        wav_path = str(TEMP_DIR / f"{job_id}.wav")
-
-        ok = extract_audio(video_path, wav_path, duration)
-
-
-
-        if not ok or not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100:
-
-            # 检查是否是静音视频（无音轨）
-
-            try:
-
-                import imageio_ffmpeg
-
-                ff = imageio_ffmpeg.get_ffmpeg_exe()
-
-                check = subprocess.run(
-
-                    f'"{ff}" -i "{video_path}" -map 0:a -f null - 2>&1',
-
-                    capture_output=True, text=True, timeout=10,
-
-                    shell=True, encoding='utf-8', errors='replace'
-
-                )
-
-                no_audio = '0 streams' in check.stderr or 'does not contain' in check.stderr
-
-            except:
-
-                no_audio = False
-
-            jobs[job_id]["status"] = "no_audio"
-
-            jobs[job_id]["result"] = {
-
-                "text": "",
-
-                "segments": [],
-
-                "error": "无法提取音频（该视频无音轨，为纯画面视频）" if no_audio else "无法提取音频（可能为静音视频）",
-
-                "no_audio": True
-
-            }
-
-            jobs[job_id]["progress"] = 100
-
-            jobs[job_id]["detail"] = "无音频"
-
+        job = jobs.get(job_id)
+        if not job:
             return
+        wav_path = job.get("wav_path") or str(TEMP_DIR / f"{job_id}.wav")
+        duration = job.get("duration", 60.0)
+        video_path = job.get("video_path", "")
 
-
-
-        jobs[job_id]["status"] = "transcribing"
-
-        jobs[job_id]["progress"] = 15
-
-        jobs[job_id]["detail"] = f"音频提取完成，正在加载 Whisper 模型（{model_name or _whisper_model_name}）..."
-
-
-
-        # 2. 分片转写（逐段更新真实进度 20%→75%）
-
-        transcript = transcribe_audio_chunked(wav_path, duration, job_id, model_name=model_name)
-
-
+        if engine == "qwen3_asr":
+            jobs[job_id]["status"] = "transcribing"
+            jobs[job_id]["progress"] = 15
+            jobs[job_id]["detail"] = "正在加载 Qwen3-ASR 模型..."
+            transcript = transcribe_qwen3_asr(wav_path, job_id, model_name=model_name)
+        else:
+            jobs[job_id]["status"] = "transcribing"
+            jobs[job_id]["progress"] = 15
+            jobs[job_id]["detail"] = f"音频提取完成，正在加载 Whisper 模型（{model_name or _whisper_model_name}）..."
+            transcript = transcribe_audio_chunked(wav_path, duration, job_id, model_name=model_name)
 
         jobs[job_id]["status"] = "analyzing"
-
         jobs[job_id]["progress"] = 80
-
         jobs[job_id]["detail"] = "转写完成，正在分析音频特征..."
 
-
-
-        # 3. 音频特征分析
-
+        # 音频特征分析
         audio_features = analyze_audio_features(wav_path)
 
-
-
-        # 4. 繁体→简体转换 + 关键词提取
-
+        # 繁体→简体转换 + 关键词提取
         print("[PostProcess] 繁体转简体...")
-
         transcript["text"] = to_simplified(transcript.get("text", ""))
-
         for seg in transcript.get("segments", []):
-
             seg["text"] = to_simplified(seg.get("text", ""))
 
-
-
         print("[PostProcess] 提取关键词...")
-
         keywords = extract_keywords(transcript.get("text", ""))
 
-
-
         jobs[job_id]["progress"] = 90
-
         jobs[job_id]["detail"] = "正在后处理（繁简转换、关键词提取）..."
 
-
-
-        # 5. 清理临时 WAV 和视频文件（防止长期运行磁盘膨胀）
+        # 清理临时 WAV 和视频文件（防止长期运行磁盘膨胀）
         try:
             os.remove(wav_path)
         except:
@@ -918,44 +900,119 @@ def run_transcription(job_id: str, video_path: str, duration: float, model_name:
         except:
             pass
 
-
-
-        jobs[job_id]["result"] = {**transcript, "audio_features": audio_features, "keywords": keywords}
-
+        jobs[job_id]["result"] = {**transcript, "audio_features": audio_features, "keywords": keywords, "engine": engine}
         jobs[job_id]["status"] = "done"
-
         jobs[job_id]["progress"] = 100
-
         jobs[job_id]["detail"] = "转写完成"
-
-
 
     except Exception as e:
         import traceback, datetime
         tb = traceback.format_exc()
         traceback.print_exc()
-        # 把完整堆栈写入 debug 日志，便于事后定位（日志位于系统 temp/video_analyzer/）
         try:
             with open(str(TEMP_DIR / 'transcribe_debug.log'), 'a', encoding='utf-8') as f:
                 f.write(f"\n[{datetime.datetime.now()}] JOB {job_id} FAILED\n{tb}\n")
         except Exception:
             pass
-
         jobs[job_id]["status"] = "error"
-
         msg = str(e)
         low = msg.lower()
-        # 把底层 libsndfile / 系统错误翻译成用户可懂的提示
         if "errno 22" in low or "invalid argument" in low or "format not recognised" in low or "not recognised" in low:
             msg = "音频解码失败（可能是音频格式不支持，或视频无有效音轨/为静音视频）"
         jobs[job_id]["error"] = msg
-
         jobs[job_id]["progress"] = 100
 
     finally:
-        # 释放并发槽位，让排队的下一个转写任务继续
         _transcribe_semaphore.release()
 
+
+def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
+    """使用 Qwen3-ASR-GGUF 本地引擎转写（ONNX Encoder + GGUF Decoder, DirectML/Vulkan 加速）。
+
+    输出带时间戳的分段（来自 Qwen3-ForcedAligner 字级对齐），结构与 Whisper 一致：
+    {"text": 全文, "segments": [{"start", "end", "text"}]}
+    """
+    global _qwen3_asr_gguf_engine
+
+    # 模型目录：backend/qwen3_asr_models/（GGUF/ONNX 模型文件所在根目录）
+    model_dir = os.environ.get("QWEN3_ASR_MODEL_DIR") or str(Path(__file__).parent / "qwen3_asr_models")
+    gguf_src = str(Path(__file__).parent / "qwen3_asr_gguf_src")
+
+    # 懒加载引擎
+    if _qwen3_asr_gguf_engine is None:
+        with _whisper_model_lock:
+            if _qwen3_asr_gguf_engine is None:
+                print(f"[Qwen3-ASR] 初始化 GGUF 引擎（模型目录: {model_dir}）...", flush=True)
+                t0 = time.time()
+                import sys
+                if gguf_src not in sys.path:
+                    sys.path.insert(0, gguf_src)
+                from qwen_asr_gguf.inference import QwenASREngine, ASREngineConfig, AlignerConfig
+
+                config = ASREngineConfig(
+                    model_dir=model_dir,
+                    onnx_provider='DML',
+                    llm_use_gpu=True,
+                    enable_aligner=True,
+                    # 显式指定与下载文件匹配的文件名（int4/q4_k 量化版）
+                    encoder_frontend_fn='qwen3_asr_encoder_frontend.int4.onnx',
+                    encoder_backend_fn='qwen3_asr_encoder_backend.int4.onnx',
+                    llm_fn='qwen3_asr_llm.q4_k.gguf',
+                    align_config=AlignerConfig(
+                        onnx_provider='DML',
+                        llm_use_gpu=True,
+                        model_dir=model_dir,
+                        encoder_frontend_fn='qwen3_aligner_encoder_frontend.int4.onnx',
+                        encoder_backend_fn='qwen3_aligner_encoder_backend.int4.onnx',
+                        llm_fn='qwen3_aligner_llm.q4_k.gguf',
+                    )
+                )
+                _qwen3_asr_gguf_engine = QwenASREngine(config=config)
+                print(f"[Qwen3-ASR] 引擎初始化完成（耗时 {time.time()-t0:.1f}s）", flush=True)
+
+    print(f"[Qwen3-ASR] 转写中: {wav_path}", flush=True)
+    jobs[job_id]["detail"] = "Qwen3-ASR 识别中..."
+    # 用 load_audio 加载音频数组后直接传给 asr（audio_file 方式在部分环境读取异常）
+    import numpy as np
+    from qwen_asr_gguf.inference.audio import load_audio
+    audio = load_audio(wav_path, sample_rate=16000)
+    res = _qwen3_asr_gguf_engine.asr(
+        audio=audio,
+        context="",
+        language="Chinese",
+        chunk_size_sec=40.0,
+        memory_chunks=2,
+    )
+
+    full_text = res.text or ""
+    segments = []
+    if res.alignment and len(res.alignment.items) > 0:
+        # 字级时间戳聚合为句子级分段（与 Whisper segments 结构一致）
+        cur_text = ""
+        cur_start = None
+        cur_end = None
+        for it in res.alignment.items:
+            t = (it.text or "").strip()
+            if not t:
+                continue
+            if cur_start is None:
+                cur_start = it.start_time
+            cur_end = it.end_time
+            cur_text += t
+            if t.endswith(("。", "！", "？", ".", "!", "?")) or (it.end_time - it.start_time > 1.5):
+                segments.append({"start": round(cur_start, 2), "end": round(cur_end, 2), "text": cur_text})
+                cur_text = ""
+                cur_start = None
+        if cur_text:
+            segments.append({"start": round(cur_start or 0, 2), "end": round(cur_end or 0, 2), "text": cur_text})
+    if not segments and full_text:
+        # 无对齐时间戳时整段兜底
+        import soundfile as sf
+        data, sr = sf.read(wav_path)
+        segments = [{"start": 0.0, "end": round(len(data) / sr, 2), "text": full_text}]
+
+    print(f"[Qwen3-ASR] 完成: {len(segments)} 段, 文本长度 {len(full_text)}", flush=True)
+    return {"text": full_text, "segments": segments, "engine": "qwen3_asr"}
 
 
 # ── API 路由 ──
@@ -1048,8 +1105,9 @@ def api_transcribe():
 
 
 
-    thread = threading.Thread(target=run_transcription, args=(job_id, video_path, duration, model_name), daemon=True)
-
+    # 上传后先只提取音频（不自动转写），提取完成状态变为 audio_ready，
+    # 由前端选择识别引擎（Whisper / Qwen3-ASR）后再调用 /api/transcribe-start 启动转写
+    thread = threading.Thread(target=run_audio_extract, args=(job_id, video_path, duration), daemon=True)
     thread.start()
 
 
@@ -1060,10 +1118,48 @@ def api_transcribe():
 
         "status": "starting",
 
-        "message": f"任务已创建，{video_file.filename} 正在转写中...",
+        "message": f"任务已创建，{video_file.filename} 音频提取中，提取完成后可选择识别模型开始转写",
 
         "model": model_name,
 
+    })
+
+
+
+@app.route("/api/transcribe-start", methods=["POST"])
+
+def api_transcribe_start():
+
+    """用户选择识别引擎后启动转写。engine: whisper / qwen3_asr"""
+
+    try:
+        body = request.get_json() or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    job_id = (body.get("job_id") or "").strip()
+    engine = (body.get("engine") or "whisper").strip().lower()
+    model = (body.get("model") or "").strip() or None
+
+    if not job_id or job_id not in jobs:
+        return jsonify({"error": "任务不存在"}), 404
+
+    job = jobs[job_id]
+    if job.get("status") in ("transcribing", "analyzing", "done", "waiting"):
+        return jsonify({"error": f"任务当前状态为 {job.get('status')}，无法重复启动"}), 400
+
+    if engine not in ("whisper", "qwen3_asr"):
+        return jsonify({"error": f"不支持的识别引擎: {engine}"}), 400
+
+    print(f"[Transcribe-Start] job {job_id} 启动转写 engine={engine} model={model or '默认'}", flush=True)
+    thread = threading.Thread(target=run_transcribe_with_engine, args=(job_id, engine, model), daemon=True)
+    thread.start()
+
+    return jsonify({
+        "job_id": job_id,
+        "status": "transcribing",
+        "engine": engine,
+        "message": f"已启动 {engine} 转写...",
     })
 
 
