@@ -726,7 +726,13 @@ async function pollTranscribeResult(jobId) {
 
     // Update step indicators
     setStep('stepUpload', 'done', '完成');
-    if (statusData.status === 'extracting' || statusData.status === 'starting') {
+    if (statusData.status === 'waiting') {
+      // 排队等待转写槽位（前一个任务进行中）
+      setStep('stepExtract', 'wait');
+      setStep('stepWhisper', 'wait');
+      setStep('stepDone', 'wait');
+      updateWhisperProgress(statusData.progress || 2, statusData.detail || '排队等待中...', statusData.elapsed_sec);
+    } else if (statusData.status === 'extracting' || statusData.status === 'starting') {
       setStep('stepExtract', 'running');
       setStep('stepWhisper', 'wait');
       setStep('stepDone', 'wait');

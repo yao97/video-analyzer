@@ -50,9 +50,11 @@ _whisper_model_name = "small"  # default, overridden by --model arg
 _ffmpeg_exe = None
 
 # 并发转写信号量：限制同时进行的转写任务数。
-# 多视频并发会同时触发 Whisper 模型实例加载（torch.set_num_threads 全局竞争），
-# 曾导致进程卡死（job 停在 22%）。限制并发可彻底避免。
-MAX_CONCURRENT_TRANSCRIBE = 2
+# 多任务并发会触发多个 Whisper 实例同时推理，torch 底层线程竞争导致部分分片
+# 解码失败（KeyError: Linear / cannot reshape），丢转写内容。
+# 实测：2 任务并发 → 每个任务各丢一半分片。因此强制串行（=1）。
+# 注意：单任务内部仍使用多线程分片并行（已验证安全，52s 视频约 35s）。
+MAX_CONCURRENT_TRANSCRIBE = 1
 _transcribe_semaphore = threading.Semaphore(MAX_CONCURRENT_TRANSCRIBE)
 
 # 可选模型列表（前端下拉框用）
@@ -777,8 +779,17 @@ def extract_keywords(text: str) -> dict:
 
 def run_transcription(job_id: str, video_path: str, duration: float, model_name: str = None):
 
-    # 并发限制：超出上限的任务排队等待（避免多实例模型加载竞争卡死）
-    _transcribe_semaphore.acquire()
+    # 并发限制：超出上限的任务排队等待（Whisper 多实例并发会导致分片解码失败，强制串行）
+    # 排队期间显示 waiting 状态，前端可见
+    if _transcribe_semaphore.acquire(blocking=False):
+        pass  # 拿到槽位，直接开始
+    else:
+        jobs[job_id]["status"] = "waiting"
+        jobs[job_id]["progress"] = 2
+        jobs[job_id]["detail"] = "前面有转写任务进行中，正在排队等待..."
+        print(f"[Queue] job {job_id} 排队等待转写槽位...", flush=True)
+        _transcribe_semaphore.acquire()  # 阻塞等待
+
     try:
 
         jobs[job_id]["status"] = "extracting"
