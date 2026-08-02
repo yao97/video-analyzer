@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────
+# Video Content Analyzer - Docker Compose
+# 单体架构：api (Flask+Whisper) + 可选 ollama (本地 LLM)
+#
+# 用法：
+#   docker compose up -d --build        # 构建并启动
+#   访问 http://localhost:8766
+#
+# 环境变量：复制 .env.example 为 .env 后按需修改
+# ─────────────────────────────────────────────────────────────
+services:
+  api:
+    build: .
+    container_name: vca-api
+    ports:
+      - "${API_PORT:-8766}:8766"
+    environment:
+      # Whisper 模型（small 推荐；内存紧张可换 tiny/base）
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      # LLM 提供商：siliconflow / deepseek / ollama / zhipu
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-siliconflow}
+      # Ollama 地址：compose 内用服务名，宿主机 Ollama 用 host.docker.internal
+      - OLLAMA_BASE=${OLLAMA_BASE:-http://ollama:11434}
+    volumes:
+      # Whisper 模型缓存（避免每次启动重复下载）
+      - whisper-models:/app/.cache/whisper
+      # 导出报告目录
+      - exports:/app/exports
+    restart: unless-stopped
+    # 资源限制：Whisper small 推理约需 1.5-2GB 内存
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEM_LIMIT:-4g}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8766/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    # 让容器内可访问宿主机服务（如宿主机的 Ollama）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 可选：Ollama 本地 LLM（需要深度分析的本地推理时启用）
+  # 启用后把 .env 的 OLLAMA_BASE 设为 http://ollama:11434
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vca-ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${OLLAMA_MEM_LIMIT:-8g}
+    profiles:
+      - llm
+
+volumes:
+  whisper-models:
+  exports:
+  ollama-data:

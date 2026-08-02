@@ -1,0 +1,78 @@
+[project]
+name = "video-analyzer"
+version = "0.1.0"
+description = "视频内容分析产品 - 音视频 + 画面智能识别"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Python全栈工程师", email = "dev@example.com" }
+]
+keywords = ["video", "analysis", "ai", "cv", "nlp"]
+
+dependencies = [
+    # Web 框架
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    
+    # 视频处理
+    "opencv-python>=4.10.0",
+    "ffmpeg-python>=0.2.0",
+    
+    # 音频处理
+    "librosa>=0.10.2",
+    "soundfile>=0.12.1",
+    "openai-whisper>=20241117",
+    
+    # 画面/图像 AI
+    "transformers>=4.46.0",
+    "torch>=2.5.0",
+    "torchvision>=0.20.0",
+    "pillow>=11.0.0",
+    "numpy>=2.2.0",
+    
+    # 工具库
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+    "loguru>=0.7.3",
+    "tenacity>=9.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+]
+ui = [
+    "streamlit>=1.40.0",
+]
+all = [
+    "video-analyzer[dev,ui]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

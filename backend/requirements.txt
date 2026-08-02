@@ -1,0 +1,22 @@
+# ── Web 框架 ──
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# ── 语音转写（Whisper） ──
+openai-whisper>=20250625
+soundfile>=0.12.0
+numpy>=1.26.0
+imageio-ffmpeg>=0.4.9
+
+# ── 文本处理 ──
+zhconv>=1.4.0
+jieba>=0.42.1
+
+# ── HTTP 客户端（LLM API / Ollama） ──
+requests>=2.31.0
+
+# ── torch（CPU 版，Whisper 推理） ──
+torch>=2.0.0
+
+# ── tokenizer（Whisper 依赖） ──
+tiktoken>=0.5.0

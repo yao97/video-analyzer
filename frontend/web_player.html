@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>&#127909;</text></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="./jszip.min.js"></script>
+<title>Video Content Analyzer - 语音+动作+画面全分析</title>
+<style>
+:root {
+  --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+  --text: #e2e8f0; --muted: #6b7084;
+  --accent: #6366f1; --accent2: #818cf8;
+  --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+  --green: #6ee7b7; --purple: #a78bfa;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter','Microsoft YaHei',-apple-system,sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+/* Header */
+header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0.85rem 2rem; display: flex; align-items: center; gap: 0.8rem; position: sticky; top: 0; z-index: 100; }
+header h1 { font-size: 1.1rem; font-weight: 700; }
+header .sub { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+
+/* Container */
+.container { max-width: 1400px; margin: 0 auto; padding: 1.2rem 2rem; }
+
+/* Upload */
+.upload-zone { border: 2px dashed var(--border); border-radius: 14px; padding: 2.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--card); margin-bottom: 1.2rem; }
+.upload-zone:hover { border-color: var(--accent); background: rgba(99,102,241,0.04); }
+.upload-zone .icon-big { font-size: 2.5rem; margin-bottom: 0.4rem; }
+.upload-zone h2 { font-size: 0.98rem; margin-bottom: 0.3rem; }
+.upload-zone p { color: var(--muted); font-size: 0.76rem; }
+.upload-zone input[type=file] { display: none; }
+
+/* Feature badges */
+.badges-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.badge { display: inline-flex; align-items: center; gap: 0.35rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.78rem; font-weight: 600; }
+.badge .icon { font-size: 0.95rem; }
+.badge.ok { border-color: rgba(16,185,129,0.4); color: var(--green); }
+.badge.fail { border-color: rgba(239,68,68,0.3); color: var(--red); }
+.badge.wait, .badge.running { border-color: rgba(251,191,36,0.3); color: var(--yellow); }
+
+/* Metrics */
+.metrics-bar { display: grid; grid-template-columns: repeat(6,1fr); gap: 0.6rem; margin-bottom: 1.2rem; }
+.metric-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 0.9rem; }
+.metric-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0.15rem; }
+.metric-value { font-size: 1.15rem; font-weight: 700; }
+.metric-sub { font-size: 0.65rem; color: var(--muted); }
+
+/* Sections */
+.section { margin-bottom: 1.8rem; }
+.section-title { font-size: 0.88rem; font-weight: 600; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+.section-title span { color: var(--accent2); }
+.section-title .count { font-size: 0.72rem; color: var(--muted); font-weight: 400; margin-left: 0.3rem; }
+
+/* Tabs */
+.tabs { display: flex; gap: 0.15rem; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tab { padding: 0.45rem 0.9rem; cursor: pointer; border: none; background: none; color: var(--muted); font-size: 0.8rem; border-bottom: 2px solid transparent; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 0.3rem; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Frame Grid */
+.frame-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 0.75rem; }
+.frame-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: transform 0.2s, border-color 0.2s; }
+.frame-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.frame-img { width: 100%; aspect-ratio: 9/16; object-fit: cover; display: block; }
+.frame-img.landscape { aspect-ratio: 16/9; }
+.frame-body { padding: 0.6rem; }
+.frame-time { font-size: 0.68rem; font-weight: 600; color: var(--accent2); background: rgba(99,102,241,0.12); display: inline-block; padding: 0.15rem 0.45rem; border-radius: 20px; margin-bottom: 0.3rem; }
+.frame-tags { display: flex; flex-wrap: wrap; gap: 0.18rem; }
+.tag { font-size: 0.6rem; padding: 0.13rem 0.35rem; border-radius: 4px; background: #232636; border: 1px solid var(--border); color: #a1a1aa; }
+.tag.yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: #fcd34d; }
+.tag.green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); color: #6ee7b7; }
+.tag.blue { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.3); color: #93c5fd; }
+.tag.purple { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.3); color: #c4b5fd; }
+.tag.red { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+.tag.orange { background: rgba(251,146,60,0.12); border-color: rgba(251,146,60,0.3); color: #fdba74; }
+.tag.pink { background: rgba(244,114,182,0.12); border-color: rgba(244,114,182,0.3); color: #f9a8d4; }
+
+/* Charts */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem; }
+.chart-title { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.65rem; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.data-table-wrapper { overflow-x: auto; max-width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+.data-table th { color: var(--muted); font-size: 0.6rem; text-transform: uppercase; padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; background: var(--card); }
+.data-table td { padding: 0.38rem 0.6rem; font-size: 0.76rem; border-bottom: 1px solid #1e2130; color: #d1d5db; white-space: nowrap; }
+.data-table tr:hover td { background: rgba(99,102,241,0.04); }
+.data-table tr:last-child td { border-bottom: none; }
+
+/* Ensure tables scroll properly in right panel */
+body.video-active .section > div[style*="overflow-x:auto"] {
+  max-width: 100%;
+}
+
+/* Responsive adjustments for video-active layout */
+@media(max-width: 1100px) {
+  body.video-active #leftPanel {
+    width: 280px !important;
+  }
+}
+@media(max-width: 900px) {
+  body.video-active .container {
+    flex-direction: column !important;
+  }
+  body.video-active #leftPanel {
+    width: 100% !important;
+    position: relative !important;
+    max-height: none !important;
+  }
+  body.video-active #rightPanel {
+    max-width: 100% !important;
+  }
+}
+
+/* Phase */
+.phase-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.phase-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; max-width: 100%; }
+.phase-bar { width: 4px; flex-shrink: 0; }
+.phase-body { padding: 0.8rem 0.95rem; flex: 1; display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; min-width: 0; overflow: hidden; }
+.phase-info { min-width: 100px; flex-shrink: 0; }
+.phase-name { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.12rem; }
+.phase-time { font-size: 0.68rem; color: var(--muted); }
+.phase-tags { display: flex; flex-wrap: wrap; gap: 0.15rem; margin-top: 0.3rem; }
+.phase-desc { font-size: 0.75rem; color: #8b8fa3; line-height: 1.65; flex: 1; min-width: 200px; word-wrap: break-word; overflow-wrap: break-word; }
+.phase-thumb { width: 75px; height: 100px; object-fit: cover; border-radius: 7px; flex-shrink: 0; }
+
+/* Timeline */
+.timeline { display: flex; flex-direction: column; gap: 0.28rem; }
+.timeline-row { display: flex; align-items: center; gap: 0.45rem; }
+.timeline-label { font-size: 0.68rem; color: var(--muted); width: 68px; flex-shrink: 0; text-align: right; }
+.timeline-bar-bg { flex: 1; background: #1e2130; border-radius: 6px; height: 18px; overflow: hidden; }
+.timeline-bar { height: 100%; border-radius: 6px; display: flex; align-items: center; padding: 0 0.35rem; }
+.timeline-name { font-size: 0.63rem; font-weight: 600; }
+
+/* Speech */
+.speech-timeline { display: flex; flex-direction: column; gap: 0.55rem; }
+.speech-segment { display: flex; gap: 0.75rem; align-items: flex-start; }
+.speech-time { font-size: 0.68rem; color: var(--accent2); font-weight: 600; background: rgba(99,102,241,0.1); padding: 0.18rem 0.45rem; border-radius: 6px; white-space: nowrap; min-width: 48px; text-align: center; margin-top: 2px; flex-shrink: 0; }
+.speech-text { font-size: 0.8rem; color: var(--text); line-height: 1.7; flex: 1; }
+.speech-text .kw { background: rgba(251,191,36,0.12); color: var(--yellow); padding: 0.08rem 0.25rem; border-radius: 3px; font-weight: 600; }
+.speech-text .aw { background: rgba(99,102,241,0.12); color: var(--accent2); padding: 0.08rem 0.25rem; border-radius: 3px; font-weight: 600; }
+
+/* Progress */
+.progress-label { font-size: 0.68rem; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 0.12rem; }
+.progress-bar { height: 4px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 0.65rem; }
+.progress-fill { height: 100%; border-radius: 3px; }
+
+/* Spinner */
+.spinner-overlay { position: fixed; inset: 0; background: rgba(15,17,23,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; gap: 0.85rem; }
+.spinner { width: 38px; height: 38px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-text { color: var(--text); font-size: 0.85rem; }
+.spinner-sub { color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; }
+.spinner-progress { width: 200px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.spinner-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+/* Toast */
+.toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1.15rem; font-size: 0.8rem; z-index: 2000; transform: translateY(80px); opacity: 0; transition: all 0.3s; max-width: 260px; line-height: 1.5; }
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: rgba(16,185,129,0.5); }
+.toast.error { border-color: rgba(239,68,68,0.5); }
+.toast.info { border-color: rgba(99,102,241,0.5); }
+
+/* Buttons */
+.btn { padding: 0.45rem 0.9rem; border-radius: 7px; border: none; font-size: 0.78rem; cursor: pointer; font-family: inherit; transition: opacity 0.2s; }
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+
+/* Copy analysis box */
+.copy-analysis { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; }
+.copy-section { margin-bottom: 0.8rem; }
+.copy-section:last-child { margin-bottom: 0; }
+.copy-section-title { font-size: 0.75rem; font-weight: 600; margin-bottom: 0.35rem; }
+.copy-tags { display: flex; flex-wrap: wrap; gap: 0.28rem; }
+.copy-tag { font-size: 0.7rem; padding: 0.22rem 0.55rem; border-radius: 6px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); color: var(--accent2); }
+.copy-tag.yellow { background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.3); color: var(--yellow); }
+.copy-tag.green { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: var(--green); }
+.copy-tag.red { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--red); }
+.copy-tag.purple { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.3); color: var(--purple); }
+
+/* Transcribe status */
+.transcribe-status { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.transcribe-steps { display: flex; flex-direction: column; gap: 0.5rem; }
+.transcribe-step { display: flex; align-items: center; gap: 0.6rem; font-size: 0.78rem; }
+.step-icon { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; flex-shrink: 0; }
+.step-icon.done { background: var(--green); color: #000; }
+.step-icon.running { background: var(--yellow); color: #000; animation: spin 1s linear infinite; }
+.step-icon.wait { background: var(--border); color: var(--muted); }
+.step-icon.fail { background: var(--red); color: #fff; }
+.step-text { color: var(--text); }
+.step-text.wait { color: var(--muted); }
+.step-time { margin-left: auto; font-size: 0.68rem; color: var(--muted); }
+
+/* Hidden */
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@media(max-width: 900px) {
+  .metrics-bar { grid-template-columns: repeat(3,1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+  .frame-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Video-active layout: flex container ── */
+body.video-active header {
+  display: none !important;
+}
+body.video-active .container {
+  display: flex !important;
+  gap: 1.5rem;
+  max-width: 100% !important;
+  padding: 1rem 1.5rem !important;
+  align-items: flex-start;
+  margin: 0 !important;
+}
+/* Left: video panel - sticky positioning */
+body.video-active #leftPanel {
+  display: block !important;
+  width: 340px !important;
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  top: 1rem !important;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+/* Hide scrollbar on left panel */
+body.video-active #leftPanel::-webkit-scrollbar { width: 3px; }
+body.video-active #leftPanel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Right: analysis content */
+body.video-active #rightPanel {
+  display: block !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  overflow-x: hidden;
+}
+/* Tab panels should handle overflow */
+body.video-active .tab-panel {
+  max-width: 100%;
+  min-width: 0;
+}
+/* Ensure tables and content don't overflow */
+body.video-active .tab-panel > * {
+  max-width: 100%;
+}
+/* Hide mainLayout wrapper (we don't need it) */
+#mainLayout { display: none !important; }
+body.video-active #mainLayout { display: flex !important; flex-direction: row !important; width: 100% !important; }
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:1.4rem;">&#127909;</div>
+  <div>
+    <h1>Video Content Analyzer</h1>
+    <div class="sub">上传视频 &rarr; 画面分析 &rarr; 语音转写 &rarr; 文案结构拆解</div>
+  </div>
+</header>
+
+<div id="spinner" class="spinner-overlay hidden">
+  <div class="spinner"></div>
+  <div class="spinner-text" id="spinnerText">正在处理...</div>
+  <div class="spinner-sub" id="spinnerSub">准备中</div>
+  <div class="spinner-progress"><div class="spinner-progress-fill" id="spinnerFill" style="width:0%"></div></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<div class="container">
+
+  <!-- Main Layout: 左侧视频 | 右侧分析 -->
+<!-- Initial Upload Zone -->
+<div id="uploadZone" class="upload-zone">
+  <div class="icon-big">📤</div>
+  <h2>上传视频文件</h2>
+  <p>支持 MP4/MOV/AVI/MKV/WebM，最大 600MB</p>
+</div>
+
+  <div id="mainLayout" style="display:none; gap:1.5rem; align-items:flex-start; padding:1.5rem 2rem; flex-wrap:wrap;">
+    <!-- Left: Video + Upload -->
+    <div id="leftPanel" style="width:100%;">
+      <div class="upload-zone" onclick="document.getElementById('fileInput').click()" style="padding:1rem; font-size:0.85rem; margin-bottom:1rem;">
+        <div class="icon-big" style="font-size:2rem;">&#128229;</div>
+        <h2 style="font-size:1rem;">更换视频</h2>
+        <p style="font-size:0.72rem;">点击此处上传新视频</p>
+        <input type="file" id="fileInput" accept="video/mp4,video/mov,video/avi,video/x-matroska,video/webm">
+      </div>
+      <video id="videoPreview" controls style="width:100%; border-radius:10px; background:#000; display:none;"></video>
+      <div id="previewMeta" style="font-size:0.72rem; color:var(--muted); margin-top:0.5rem; line-height:1.8;"></div>
+    </div>
+    <!-- Right: Analysis Tabs -->
+    <div id="rightPanel" style="min-width:0;">
+
+
+  <!-- Feature badges -->
+  <div id="featureBadges" class="badges-row hidden">
+    <div class="badge wait" id="badgeColor"><span class="icon">&#127912;</span><span>画面分析</span><span id="badgeColorText">等待</span></div>
+    <div class="badge wait" id="badgeSpeech"><span class="icon">&#127911;</span><span>语音转写</span><span id="badgeSpeechText">等待</span></div>
+    <div class="badge wait" id="badgeContent"><span class="icon">&#127981;</span><span>内容识别</span><span id="badgeContentText">等待</span></div>
+    <div class="badge wait" id="badgeCopy"><span class="icon">&#128221;</span><span>文案生成</span><span id="badgeCopyText">等待</span></div>
+  </div>
+
+  <!-- Metrics -->
+  <div id="metricsSection" class="metrics-bar hidden">
+    <div class="metric-card"><div class="metric-label">时长</div><div class="metric-value" id="mDuration">--</div><div class="metric-sub" id="mOrientation">--</div></div>
+    <div class="metric-card"><div class="metric-label">分辨率</div><div class="metric-value" id="mResolution">--</div><div class="metric-sub">H.264</div></div>
+    <div class="metric-card"><div class="metric-label">帧率</div><div class="metric-value" id="mFps">--</div><div class="metric-sub">fps</div></div>
+    <div class="metric-card"><div class="metric-label">总帧数</div><div class="metric-value" id="mFrames">--</div><div class="metric-sub">帧</div></div>
+    <div class="metric-card"><div class="metric-label">文件大小</div><div class="metric-value" id="mSize">--</div><div class="metric-sub">MB</div></div>
+    <div class="metric-card"><div class="metric-label">音轨</div><div class="metric-value" id="mAudio">--</div><div class="metric-sub" id="mAudioSub">--</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div id="tabsSection" class="hidden">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab(this,'tabSpeech')">&#127911; 语音转写</button>
+      <button class="tab" onclick="switchTab(this,'tabFrames')">&#128444; 帧预览</button>
+      <button class="tab" onclick="switchTab(this,'tabDeepReport')">&#128270; 深度拆解</button>
+      <button class="tab" onclick="switchTab(this,'tabReport')">&#128196; 完整报告</button>
+    </div>
+
+    <!-- ── 语音转写 ── -->
+    <div id="tabSpeech" class="tab-panel active">
+      <div class="section">
+        <div class="section-title">&#127911; <span>语音转写</span> <span id="speechTabCount" class="count"></span></div>
+        <div id="transcribeStatusBox" class="transcribe-status">
+          <div class="transcribe-steps" id="transcribeSteps">
+            <div class="transcribe-step"><span class="step-icon wait" id="stepUpload">1</span><span class="step-text wait">上传视频</span></div>
+            <div class="transcribe-step"><span class="step-icon wait" id="stepExtract">2</span><span class="step-text wait">提取音频</span></div>
+            <div class="transcribe-step"><span class="step-icon wait" id="stepWhisper">3</span><span class="step-text wait">Whisper 转写</span></div>
+            <div class="transcribe-step"><span class="step-icon wait" id="stepDone">4</span><span class="step-text wait">完成</span></div>
+          </div>
+          <!-- Whisper 进度条 -->
+          
+<div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
+<span style="font-size:0.73rem;color:#6b7084;">Whisper 模型:</span>
+<select id="whisperModelSelect" onchange="onWhisperModelChange()" style="font-size:0.73rem;padding:0.3rem 0.5rem;background:#1a1d27;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;font-family:inherit;">
+<option value="tiny">Tiny — 最快</option>
+<option value="base">Base — 快速</option>
+<option value="small" selected>Small — 推荐</option>
+<option value="medium">Medium — 最准确</option>
+</select>
+<button id="btnReTranscribe" class="btn btn-secondary" onclick="reTranscribe()" style="display:none;font-size:0.73rem;padding:0.35rem 0.8rem;">&#128260; 重新转写</button>
+<span id="whisperModelHint" style="font-size:0.68rem;color:#4a4d63;"></span>
+</div>
+<div id="whisperProgressWrap" class="hidden" style="margin-top:0.9rem;">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+<span style="font-size:0.75rem;color:#818cf8;font-weight:600;">&#127916; <span id="whisperDetail">转写中...</span></span>
+<div style="display:flex;align-items:center;gap:0.5rem;">
+<span id="whisperElapsed" style="font-size:0.68rem;color:#6b7084;">0.0s</span>
+<span id="whisperPct" style="font-size:0.78rem;color:#fbbf24;font-weight:700;">0%</span>
+<button id="whisperDetailToggle" onclick="toggleWhisperDetail()" style="font-size:0.62rem;background:none;border:1px solid var(--border);color:var(--muted);padding:0.08rem 0.4rem;border-radius:4px;cursor:pointer;">&#128065; 详情</button>
+</div>
+</div>
+<div style="height:8px;background:#2a2d3a;border-radius:6px;overflow:hidden;">
+<div id="whisperBar" style="height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:6px;transition:width 0.5s;width:0%;"></div>
+</div>
+<div id="whisperDetailPanel" class="hidden" style="margin-top:0.4rem;background:#0d0f15;border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.6rem;max-height:180px;overflow-y:auto;font-size:0.66rem;line-height:1.7;color:#a1a1aa;font-family:'Courier New',monospace;">
+<div id="whisperLog"></div>
+</div>
+</div>
+            <div id="whisperETA" style="font-size:0.68rem;color:var(--muted);margin-top:0.22rem;text-align:right;">预估剩余 <span id="whisperETASec">--</span>s</div>
+          </div>
+        </div>
+        <div id="speechTimeline" class="speech-timeline"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">&#128221; <span>关键词提取</span></div>
+        <div id="keywordBox" class="copy-analysis">
+          <div class="copy-section"><div class="copy-section-title">高频词</div><div id="kwFreq" class="copy-tags"></div></div>
+          <div class="copy-section"><div class="copy-section-title">动作词</div><div id="kwAction" class="copy-tags"></div></div>
+          <div class="copy-section"><div class="copy-section-title">情绪词</div><div id="kwEmotion" class="copy-tags"></div></div>
+          <div class="copy-section"><div class="copy-section-title">产品/核心词</div><div id="kwProduct" class="copy-tags"></div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">&#128221; <span>视频文案脚本</span> <span id="scriptPartsNote" class="count"></span></div>
+        <div id="scriptParts" class="copy-analysis" style="font-size:0.8rem;line-height:2;color:#d1d5db;white-space:pre-wrap;"></div>
+      </div>
+    </div>
+
+    <!-- ── 分帧 ── -->
+    <div id="tabFrames" class="tab-panel">
+      <div class="section">
+        <div class="section-title">&#128444; <span>关键帧预览</span> <span id="frameCount" class="count"></span></div>
+        <div class="frame-grid" id="frameGrid"></div>
+      </div>
+    </div>
+
+    <!-- ── 深度拆解 ── -->
+    <div id="tabDeepReport" class="tab-panel">
+      <div class="section">
+        <div class="section-title">&#128270; <span>短视频深度拆解报告</span> <span id="deepReportStatus" style="font-size:0.72rem;color:#6b7084;font-weight:400;"></span></div>
+        <div id="deepStep1" style="margin-bottom:1rem;padding:0.85rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
+          <div style="font-size:0.76rem;color:#6b7084;line-height:1.7;margin-bottom:0.8rem;">
+            将视频画面分析 + 语音转写 + 元数据打包发送给大语言模型，生成「一句话内核 / 三大可执行论点 / 陷阱反例 / 作者局限 / 三句话」结构化拆解。<br>
+            API Key 仅保存在浏览器内存，后端不存储。
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <select id="deepProvider" onchange="onProviderChange()" style="font-size:0.75rem;padding:0.35rem 0.5rem;background:#0f1117;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;font-family:inherit;">
+              <option value="siliconflow">硅基流动 SiliconFlow</option>
+              <option value="deepseek">DeepSeek（官方 API）</option>
+              <option value="ollama">Ollama（本地）</option>
+              <option value="zhipu">智谱 Zhipu</option>
+            </select>
+            <input type="password" id="deepApiKey" placeholder="输入 API Key" style="font-size:0.75rem;padding:0.35rem 0.5rem;background:#0f1117;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;width:220px;">
+            <input type="text" id="deepOllamaBase" placeholder="Ollama 地址（默认 http://127.0.0.1:11434）" value="http://127.0.0.1:11434" style="display:none;font-size:0.75rem;padding:0.35rem 0.5rem;background:#0f1117;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;width:220px;">
+            <button class="btn btn-secondary" onclick="testApiKey()" style="font-size:0.73rem;padding:0.35rem 0.8rem;">验证 Key</button>
+            <button class="btn btn-secondary" onclick="testOllama()" style="display:none;font-size:0.73rem;padding:0.35rem 0.8rem;" id="deepBtnOllama">检测 Ollama</button>
+          </div>
+          <div id="deepModelWrap" style="display:none;margin-top:0.6rem;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <select id="deepModelSelect" style="font-size:0.75rem;padding:0.35rem 0.5rem;background:#0f1117;color:#e2e8f0;border:1px solid #2a2d3a;border-radius:6px;min-width:240px;"></select>
+            <button class="btn btn-primary" onclick="doDeepAnalysis()" style="font-size:0.73rem;padding:0.35rem 0.8rem;">启动深度分析</button>
+            <button class="btn btn-secondary" onclick="cancelDeepAnalysis()" style="font-size:0.73rem;padding:0.35rem 0.8rem;display:none;" id="deepBtnCancel">取消</button>
+            <span id="deepStepInfo" style="font-size:0.7rem;color:#818cf8;"></span>
+          </div>
+        </div>
+        <div id="deepReportLoading" style="display:none;margin:1rem 0;font-size:0.8rem;color:#818cf8;padding:0.9rem;background:#141627;border:1px solid #2a2d3a;border-radius:10px;line-height:1.7;">
+          <div id="deepProgressText">正在准备...</div>
+          <div style="height:6px;background:#232636;border-radius:4px;overflow:hidden;margin-top:0.5rem;">
+            <div id="deepProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:4px;transition:width 0.5s;"></div>
+          </div>
+        </div>
+        <div id="deepReportError" style="display:none;margin:1rem 0;font-size:0.8rem;color:#f87171;padding:0.9rem;background:#2d1515;border:1px solid #5c2a2a;border-radius:10px;line-height:1.7;"></div>
+        <div id="deepReportContent" class="copy-analysis" style="display:none;max-height:70vh;overflow-y:auto;"></div>
+        <div id="deepReportActions" style="display:none;gap:0.45rem;margin-top:0.6rem;">
+          <button class="btn btn-secondary" onclick="downloadDeepReport()">&#128229; 下载深度报告</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 报告 ── -->
+    <div id="tabReport" class="tab-panel">
+      <div class="section">
+        <div class="section-title">&#128196; <span>完整分析报告</span></div>
+        <div id="reportMdHtml" style="width:100%;min-height:450px;max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:1rem 1.2rem;line-height:1.8;box-sizing:border-box;"></div>
+        <div style="display:flex;gap:0.45rem;margin-top:0.75rem;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="downloadAll()">&#128190; 保存到项目目录</button>
+<button class="btn btn-secondary" onclick="downloadAllZip()">&#128230; 下载ZIP</button>
+<span style="color:#6b7084;font-size:0.72rem;margin:0 0.3rem;">|</span>
+<button class="btn btn-secondary" onclick="downloadReportHTML()">&#128229; 仅HTML</button>
+<button class="btn btn-secondary" onclick="downloadReportMarkdown()">&#128229; 仅Markdown</button>
+<button class="btn btn-secondary" onclick="downloadMergedFrames()">&#128230; 仅帧图片</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════
+let analysisResult = null;
+let speechResult = null;
+let frameImages = [];   // {blob, img, t}
+let transcribeJobId = null;
+let transcribePollTimer = null;
+let reportMdText = '';
+let transcribeFile = null, transcribeDuration = 0;
+let deepReportCache = '';
+let deepAnalysisJobId = null, deepAnalysisPollTimer = null;
+
+// API 基地址：前端由同一 Flask 服务 serve，用相对路径可适配任何访问 IP
+const TRANSCRIBE_BASE = '';
+
+// ═══════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const show = id => $(id)?.classList.remove('hidden');
+const hide = id => $(id)?.classList.add('hidden');
+
+const toast = (msg, type='success') => {
+  const t = $('toast');
+  t.textContent = msg; t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 3500);
+};
+
+const switchTab = (btn, pid) => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  $(pid)?.classList.add('active');
+};
+
+const COLOR_RGB = {
+  '红色':'#f87171','橙色':'#fb923c','黄色':'#fbbf24','绿色':'#4ade80',
+  '青色':'#22d3ee','蓝色':'#60a5fa','紫色':'#a78bfa','粉色':'#f472b6',
+  '白色':'#f8fafc','灰色':'#94a3b8','黑色':'#374151',
+};
+const colorHex = n => COLOR_RGB[n] || '#94a3b8';
+
+function setBadge(id, status, text) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'badge ' + status;
+  const t = $(id + 'Text');
+  if (t) t.textContent = text;
+}
+
+function setStep(id, status, time) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'step-icon ' + status;
+  el.textContent = status === 'done' ? '✓' : (status === 'running' ? '●' : el.textContent.match(/\d/)?.[0] || '?');
+  if (time !== undefined) {
+    const stepEl = el.parentElement;
+    const timeEl = stepEl.querySelector('.step-time');
+    if (timeEl) timeEl.textContent = time;
+  }
+}
+
+function updateWhisperProgress(progress, estimatedRemaining) {
+  // 显示进度条容器
+  show('whisperProgressWrap');
+  // 更新百分比
+  const pct = Math.round(Math.min(80, progress));
+  $('whisperPct').textContent = pct + '%';
+  $('whisperBar').style.width = pct + '%';
+  // 更新预估剩余时间
+  if (estimatedRemaining !== undefined && estimatedRemaining > 0) {
+    $('whisperETASec').textContent = Math.round(estimatedRemaining);
+    $('whisperETA').style.display = '';
+  } else {
+    $('whisperETASec').textContent = '--';
+  }
+  // 颜色随进度变化
+  const hue = 220 + (pct / 80) * 60;
+  $('whisperBar').style.background = `linear-gradient(90deg, hsl(${hue},70%,60%), hsl(${hue+20},70%,70%), hsl(${hue+40},70%,75%))`;
+}
+
+function hideWhisperProgress(finalPct) {
+  // 完成时先显示 100% 再渐隐
+  if (finalPct !== undefined) {
+    $('whisperPct').textContent = '100%';
+    $('whisperBar').style.width = '100%';
+    $('whisperBar').style.transition = 'width 0.4s ease, opacity 0.6s ease 0.3s';
+    $('whisperBar').style.opacity = '0';
+    $('whisperETA').style.display = 'none';
+    setTimeout(() => hide('whisperProgressWrap'), 1000);
+  } else {
+    hide('whisperProgressWrap');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Content Type Engine (基于画面多维特征)
+// ═══════════════════════════════════════════════════════════════
+
+async function analyzeFramesColor(imgSrcs) {
+  const results = [];
+  for (let i = 0; i < imgSrcs.length; i++) {
+    const img = new Image();
+    await new Promise(res => { img.onload = res; img.src = imgSrcs[i]; });
+    const canvas = document.createElement('canvas');
+    canvas.width = 120;
+    canvas.height = Math.round(120 * img.height / img.width);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    let rS=0, gS=0, bS=0;
+    let skinP=0, redP=0, whiteP=0, blueP=0, darkP=0, textP=0, purpleP=0;
+    const cc = {};
+    let total = data.length / 4;
+
+    for (let j = 0; j < data.length; j += 4) {
+      const r = data[j], g = data[j+1], b = data[j+2];
+      rS += r; gS += g; bS += b;
+
+      // Skin detection (classic)
+      if (r > 80 && g > 55 && b > 40 && r > g && r > b && Math.abs(r-g) < 65 && r > 95) skinP++;
+
+      // Red/orange
+      if (r > 150 && r > g * 1.3 && r > b * 1.3) redP++;
+
+      // White background
+      if (r > 215 && g > 215 && b > 215 && Math.abs(r-g) < 35) whiteP++;
+
+      // Blue (device UI / sky / water)
+      if (b > 110 && b > r * 1.15 && b > g * 1.1) blueP++;
+
+      // Purple
+      if (r > 100 && b > 120 && r < b && g < 100) purpleP++;
+
+      // Dark
+      if (r < 55 && g < 55 && b < 55) darkP++;
+
+      // Text (high contrast)
+      const rng = Math.max(r,g,b) - Math.min(r,g,b);
+      if (rng > 180 && (r > 200 || g > 200 || b > 200) && (r < 60 || g < 60 || b < 60)) textP++;
+
+      // HSV color classification
+      const maxC = Math.max(r,g,b), minC = Math.min(r,g,b);
+      const delta = maxC - minC;
+      let name;
+      if (delta < 15) name = maxC > 200 ? '白色' : '灰色';
+      else {
+        let hDeg;
+        if (maxC === r) hDeg = 60 * ((g-b)/delta % 6);
+        else if (maxC === g) hDeg = 60 * ((b-r)/delta + 2);
+        else hDeg = 60 * ((r-g)/delta + 4);
+        hDeg = (hDeg + 360) % 360;
+        if (hDeg < 15 || hDeg >= 345) name = '红色';
+        else if (hDeg < 40) name = '橙色';
+        else if (hDeg < 75) name = '黄色';
+        else if (hDeg < 155) name = '绿色';
+        else if (hDeg < 210) name = '青色';
+        else if (hDeg < 265) name = '蓝色';
+        else if (hDeg < 295) name = '紫色';
+        else name = '粉色';
+      }
+      cc[name] = (cc[name] || 0) + 1;
+    }
+
+    const avgR = rS/total, avgG = gS/total, avgB = bS/total;
+    const brightness = (avgR*0.299 + avgG*0.587 + avgB*0.114) / 255;
+    const maxC2 = Math.max(avgR, avgG, avgB), minC2 = Math.min(avgR, avgG, avgB);
+    const satV = maxC2 === 0 ? 0 : (maxC2 - minC2) / maxC2 * 255;
+    let hueV = 0;
+    if (maxC2 === avgR) hueV = 60 * ((avgG-avgB)/((maxC2-minC2)||1) % 6);
+    else if (maxC2 === avgG) hueV = 60 * ((avgB-avgR)/(maxC2-minC2||1) + 2);
+    else hueV = 60 * ((avgR-avgG)/(maxC2-minC2||1) + 4);
+    hueV = (hueV + 360) % 360;
+
+    const topColors = Object.entries(cc).sort((a,b) => b[1]-a[1]).slice(0,5).map(e => e[0]);
+
+    // Shot type estimation
+    let shotType = 'UNKNOWN';
+    if (skinP/total > 0.15) shotType = '人物特写';
+    else if (skinP/total > 0.05) shotType = '人物中景';
+    else if (whiteP/total > 0.3) shotType = '产品展示';
+    else if (darkP/total > 0.25) shotType = '暗光场景';
+    else if (blueP/total > 0.05) shotType = '蓝色场景';
+    else shotType = '一般场景';
+
+    results.push({
+      t: 0,
+      brightness: +brightness.toFixed(3),
+      hue: +hueV.toFixed(1),
+      sat: +satV.toFixed(1),
+      motion: 0, motionLabel: '静止',
+      brightnessLabel: brightness > 0.65 ? '明亮' : (brightness < 0.3 ? '昏暗' : '适中'),
+      skinRatio: +(skinP/total).toFixed(3),
+      rednessRatio: +(redP/total).toFixed(3),
+      whiteRatio: +(whiteP/total).toFixed(3),
+      blueRatio: +(blueP/total).toFixed(3),
+      purpleRatio: +(purpleP/total).toFixed(3),
+      darkRatio: +(darkP/total).toFixed(3),
+      textRatio: +(textP/total*100).toFixed(2),
+      hasText: textP/total > 0.008,
+      colors: topColors,
+      dominantColor: topColors[0] || '灰色',
+      avgR: +avgR.toFixed(1), avgG: +avgG.toFixed(1), avgB: +avgB.toFixed(1),
+      shotType,
+    });
+  }
+
+  results.forEach((r, i) => r.t = frameImages[i].t);
+
+  for (let i = 1; i < results.length; i++) {
+    const dB = Math.abs(results[i].brightness - results[i-1].brightness) * 2
+             + Math.abs(results[i].skinRatio - results[i-1].skinRatio);
+    const m = Math.min(1, dB * 3);
+    results[i].motion = m;
+    results[i].motionLabel = m < 0.05 ? '低' : (m < 0.2 ? '中' : '高');
+  }
+  return results;
+}
+
+async function startTranscription(file, duration) {
+  const formData = new FormData();
+  formData.append('video', file);
+  formData.append('duration', String(duration));
+  // 传递选中的 Whisper 模型
+  const modelSelect = document.getElementById('whisperModelSelect');
+  if (modelSelect) formData.append('model', modelSelect.value);
+
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/transcribe', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    return data.job_id;
+  } catch(e) {
+    console.error('Transcribe start failed:', e);
+    return null;
+  }
+}
+
+async function pollTranscribeResult(jobId) {
+  try {
+    // Status
+    const statusResp = await fetch(TRANSCRIBE_BASE + '/api/status/' + jobId);
+    const statusData = await statusResp.json();
+
+    // 处理 404 / 任务不存在（服务重启后旧 job 丢失）
+    if (!statusResp.ok && statusData.error) {
+      clearInterval(transcribePollTimer);
+      transcribePollTimer = null;
+      setBadge('badgeSpeech', 'fail', '任务丢失');
+      setStep('stepWhisper', 'fail');
+      hideWhisperProgress();
+      $('speechTimeline').innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:1rem 0;">转写任务已失效（服务可能已重启）。请点击「重新转写」重试。<br><span style="font-size:0.72rem;color:#6b7084;">${statusData.error}</span></div>`;
+      const btnRe = document.getElementById('btnReTranscribe');
+      if (btnRe) btnRe.style.display = '';
+      return;
+    }
+
+    // Update step indicators
+    setStep('stepUpload', 'done', '完成');
+    if (statusData.status === 'extracting' || statusData.status === 'starting') {
+      setStep('stepExtract', 'running');
+      setStep('stepWhisper', 'wait');
+      setStep('stepDone', 'wait');
+      updateWhisperProgress(statusData.progress || 5, statusData.detail, statusData.elapsed_sec);
+    } else if (statusData.status === 'transcribing') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'running');
+      setStep('stepDone', 'wait');
+      updateWhisperProgress(statusData.progress || 20, statusData.detail, statusData.elapsed_sec);
+    } else if (statusData.status === 'analyzing') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'done', '完成');
+      setStep('stepDone', 'running');
+      updateWhisperProgress(statusData.progress || 80, statusData.detail, statusData.elapsed_sec);
+    } else if (statusData.status === 'done') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'done', '完成');
+      setStep('stepDone', 'done', '完成');
+      clearInterval(transcribePollTimer);
+      // Fetch result
+      const resultResp = await fetch(TRANSCRIBE_BASE + '/api/result/' + jobId);
+      const resultData = await resultResp.json();
+      if (resultData.result) {
+        speechResult = resultData.result;
+        setBadge('badgeSpeech', 'ok', (speechResult.segments?.length || 0) + '段');
+        hideWhisperProgress(100);
+        renderSpeech(speechResult);
+        renderReportFinal();
+        toast('语音转写完成！识别 ' + (speechResult.segments?.length || 0) + ' 段');
+        const btnRe = document.getElementById('btnReTranscribe');
+        if (btnRe) btnRe.style.display = '';
+      }
+      return;
+    } else if (statusData.status === 'error') {
+      setBadge('badgeSpeech', 'fail', '失败');
+      setStep('stepWhisper', 'fail');
+      clearInterval(transcribePollTimer);
+      hideWhisperProgress();
+      $('speechTimeline').innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:1rem 0;">转写失败: ${statusData.error || '未知错误'}（可能是静音视频或音频格式不支持）<br><span style="font-size:0.72rem;color:#6b7084;">可尝试更换模型后重新转写</span></div>`;
+      const btnRe1 = document.getElementById('btnReTranscribe');
+      if (btnRe1) btnRe1.style.display = '';
+      return;
+    } else if (statusData.status === 'no_audio') {
+      setBadge('badgeSpeech', 'fail', '无音频');
+      setStep('stepExtract', 'fail');
+      clearInterval(transcribePollTimer);
+      hideWhisperProgress();
+      $('speechTimeline').innerHTML = `<div style="color:var(--yellow);font-size:0.8rem;padding:1rem 0;">未检测到音频轨道（该视频可能为静音视频）</div>`;
+      return;
+    }
+  } catch(e) {
+    console.error('Poll error:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Keywords
+// ═══════════════════════════════════════════════════════════════
+function extractKeywords(text) {
+  const ACTION_WORDS = new Set(['推荐','介绍','讲解','分享','展示','演示','告诉','帮助','发现','觉得','看到','注意','开始','使用','体验','感受','操作','完成','点击','打开','购买','点击','告诉您','告诉你们','怎么','如何','为什么','因为','所以','这样','那样']);
+  const EMOTION_WORDS = new Set(['非常','特别','真的','简直','太','好','很','超','极','十分','喜欢','爱','赞','棒','厉害','牛','优秀','完美','漂亮','好看','开心','快乐','激动','兴奋','惊喜','满意','放心','绝绝子','太棒','超级','非常']);
+  const STOP = new Set(['的是','这个','那个','就是','可以','没有','什么','怎么','一个','如果','因为','所以','而且','但是','或者','以及','还有','对于','关于','通过','进行']);
+
+  const freq = {};
+  const words = text.match(/[\u4e00-\u9fa5]{2,}/g) || [];
+  words.forEach(w => freq[w] = (freq[w]||0) + 1);
+  const sorted = Object.entries(freq).sort((a,b) => b[1]-a[1]);
+
+  const highFreq = sorted.filter(([w]) => w.length>=2 && !STOP.has(w) && freq[w]>=2).slice(0,20).map(e=>e[0]);
+  const actions = sorted.filter(([w]) => ACTION_WORDS.has(w)).slice(0,10).map(e=>e[0]);
+  const emotions = sorted.filter(([w]) => EMOTION_WORDS.has(w) || [...EMOTION_WORDS].some(e=>w.includes(e))).slice(0,10).map(e=>e[0]);
+  const products = sorted.filter(([w]) => w.length>=3 && freq[w]>=1 && !STOP.has(w)).slice(0,15).map(e=>e[0]);
+
+  return { highFreq, actions, emotions, products };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Main Pipeline
+// ═══════════════════════════════════════════════════════════════
+async function processFile(file) {
+  if (!file.type.startsWith('video/')) { toast('请上传视频文件', 'error'); return; }
+  if (file.size > 600*1024*1024) { toast('文件过大（>600MB）', 'error'); return; }
+
+  // Reset state
+  speechResult = null;
+  transcribeJobId = null;
+  clearInterval(transcribePollTimer);
+
+  show('spinner');
+  $('spinnerText').textContent = '读取视频...';
+  $('spinnerSub').textContent = '准备中';
+  $('spinnerFill').style.width = '5%';
+
+  setBadge('badgeColor','running','分析中');
+  setBadge('badgeSpeech','wait','等待');
+  setBadge('badgeContent','wait','等待');
+  setBadge('badgeCopy','wait','等待');
+
+  // Reset step indicators
+  ['stepUpload','stepExtract','stepWhisper','stepDone'].forEach((id,i) => setStep(id,'wait'));
+
+  try {
+    // ── 1. 加载视频 ──
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = false;
+    video.src = URL.createObjectURL(file);
+    await new Promise((res,rej) => { video.onloadedmetadata = res; video.onerror = rej; });
+
+    // 显示视频预览（左侧面板）
+    $('videoPreview').style.display = 'block';
+    $('videoPreview').src = video.src;
+    $('previewMeta').innerHTML =
+      `分辨率: ${video.videoWidth}x${video.videoHeight} &nbsp;|&nbsp; 时长: ${video.duration.toFixed(1)}s<br>` +
+      `文件大小: ${(file.size/1024/1024).toFixed(2)} MB &nbsp;|&nbsp; 类型: ${file.type}`;
+    document.body.classList.add('video-active');
+    $('mainLayout').style.display = 'flex';
+    // 只隐藏初始上传区，保留左侧"更换视频"按钮
+    const initZone = $('uploadZone');
+    if (initZone) initZone.style.display = 'none';
+
+    const duration = video.duration;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const fps = 30;
+    const totalFrames = Math.floor(duration * fps);
+
+    $('spinnerFill').style.width = '10%';
+    $('spinnerSub').textContent = '提取关键帧...';
+
+    // ── 2. 提取帧 ──
+    const numFrames = Math.min(15, Math.max(6, Math.floor(duration / 3)));
+    frameImages = [];
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = vw; tmpCanvas.height = vh;
+    const tCtx = tmpCanvas.getContext('2d');
+
+    for (let i = 0; i < numFrames; i++) {
+      const t = (i / numFrames) * duration * 0.97 + duration * 0.015;
+      await new Promise(resolve => {
+        video.currentTime = Math.min(t, duration - 0.01);
+        video.onseeked = () => {
+          tCtx.drawImage(video, 0, 0);
+          tmpCanvas.toBlob(blob => {
+            if (blob) frameImages.push({ blob, img: URL.createObjectURL(blob), t: +(video.currentTime).toFixed(1) });
+            resolve();
+          }, 'image/jpeg', 0.82);
+        };
+      });
+      $('spinnerFill').style.width = (10 + 20 * (i/numFrames)) + '%';
+      $('spinnerSub').textContent = `提取帧 ${i+1}/${numFrames}...`;
+    }
+
+    frameImages.sort((a,b) => a.t - b.t);
+    frameImages = frameImages.reduce((acc, f) => {
+      if (!acc.find(a => Math.abs(a.t-f.t) < 0.3)) acc.push(f);
+      return acc;
+    }, []);
+
+    // ── 3. 色彩分析 ──
+    $('spinnerSub').textContent = '分析画面色彩...';
+    $('spinnerFill').style.width = '35%';
+    const frames = await analyzeFramesColor(frameImages.map(f => f.img));
+    $('spinnerFill').style.width = '45%';
+
+    analysisResult = {
+      name: file.name, duration, fps, width: vw, height: vh,
+      totalFrames, fileSize: (file.size/1024/1024).toFixed(2),
+      frames,
+    };
+
+    setBadge('badgeColor','ok', frames.length+'帧');
+    $('spinnerFill').style.width = '50%';
+    $('spinnerSub').textContent = '画面分析完成 ✓';
+
+    // ── 5. 渲染画面分析结果（立即显示）──
+    renderMetrics(analysisResult);
+    renderFrames(analysisResult);
+
+    show('featureBadges');
+    show('metricsSection');
+    show('tabsSection');
+    hide('spinner');
+
+    // ── 6. 启动语音转写（后台）──
+    $('spinnerSub').textContent = '启动语音转写...';
+    setBadge('badgeSpeech','running','启动中');
+    setStep('stepUpload','running');
+    hideWhisperProgress();
+
+        transcribeFile = file;
+    transcribeDuration = duration;
+
+    // 清空进度日志
+    _whisperLogEntries = [];
+    var logEl = $('whisperLog');
+    if (logEl) logEl.innerHTML = '';
+
+    const jobId = await startTranscription(file, duration);
+    if (jobId) {
+      transcribeJobId = jobId;
+      setStep('stepUpload','done','完成');
+      setBadge('badgeSpeech','running','转写中');
+      updateWhisperProgress(40, null);  // 显示进度条，每 2s 轮询更新
+
+      // Poll every 2s
+      transcribePollTimer = setInterval(() => pollTranscribeResult(jobId), 2000);
+      // Also start immediately
+      pollTranscribeResult(jobId);
+    } else {
+      // Backend unavailable
+      setBadge('badgeSpeech','fail','服务未启动');
+      setStep('stepUpload','fail');
+      $('speechTimeline').innerHTML = `<div style="color:var(--yellow);font-size:0.8rem;padding:1rem 0;">
+        &#9888; 转写服务未启动。请先运行以下命令启动服务：<br>
+        <code style="background:#232636;padding:0.3rem 0.6rem;border-radius:6px;display:inline-block;margin-top:0.5rem;font-size:0.75rem;">
+          python transcribe_server.py --port 8766
+        </code>
+      </div>`;
+    }
+
+    toast(`分析完成！帧: ${frames.length}`);
+
+  } catch(err) {
+    console.error(err);
+    hide('spinner');
+    toast('分析失败: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Render Functions
+// ═══════════════════════════════════════════════════════════════
+function renderMetrics(r) {
+
+}
+
+function renderSpeech(speech) {
+  $('speechTabCount').textContent = speech?.segments?.length ? `(${speech.segments.length}段，${speech.text?.length||0}字)` : '';
+  $('mAudioSub').textContent = '已识别';
+
+  if (speech?.segments?.length) {
+    $('speechTimeline').innerHTML = speech.segments.map(s => {
+      // Highlight keywords
+      const kw = speech.keywords;
+      let text = s.text;
+      if (kw?.highFreq) {
+        kw.highFreq.forEach(word => {
+          if (word.length >= 2) text = text.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'g'), `<span class="kw">${word}</span>`);
+        });
+      }
+      if (kw?.actions) {
+        kw.actions.forEach(word => {
+          if (word.length >= 2) text = text.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'g'), `<span class="aw">${word}</span>`);
+        });
+      }
+      return `<div class="speech-segment">
+        <span class="speech-time">@${s.start.toFixed(0)}s</span>
+        <span class="speech-text">${text}</span>
+      </div>`;
+    }).join('');
+
+    // Keywords
+    if (speech.keywords) {
+      $('kwFreq').innerHTML = speech.keywords.highFreq.slice(0,12).map(k => `<span class="copy-tag">${k}</span>`).join('');
+      $('kwAction').innerHTML = speech.keywords.actions.slice(0,8).map(k => `<span class="copy-tag yellow">${k}</span>`).join('');
+      $('kwEmotion').innerHTML = speech.keywords.emotions.slice(0,8).map(k => `<span class="copy-tag purple">${k}</span>`).join('');
+      $('kwProduct').innerHTML = speech.keywords.products.slice(0,12).map(k => `<span class="copy-tag green">${k}</span>`).join('');
+    }
+
+    // 视频文案脚本（开场/主体/结尾）
+    renderScriptParts(speech);
+  } else if (speech?.text) {
+    $('speechTimeline').innerHTML = `<div class="speech-segment"><span class="speech-text">${speech.text}</span></div>`;
+    renderScriptParts(speech);
+  } else if (speech?.no_audio) {
+    $('speechTimeline').innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:1.2rem 0;">🎧 该视频无音轨（纯画面视频），无法转写语音。<br><span style="font-size:0.76rem;color:#999;">上传含声音的手机视频即可体验语音转写功能。</span></div>`;
+    $('mAudioSub').textContent = '无音轨';
+  } else {
+    $('speechTimeline').innerHTML = `<div style="color:var(--muted);font-size:0.8rem;padding:1rem 0;">无语音内容</div>`;
+    renderScriptParts(null);
+  }
+}
+
+// 从转写分段提取【开场】【主体】【结尾】三段（按时间比例 15% / 70% / 15%）
+function extractScriptParts(segments) {
+  if (!segments || !segments.length) return null;
+  const last = segments[segments.length - 1];
+  const total = (last.end || last.start || 0);
+  if (total <= 0) {
+    // 无时间信息：按段数比例
+    const n = segments.length;
+    return {
+      open: segments.slice(0, Math.max(1, Math.ceil(n * 0.2))).map(s => s.text).join(''),
+      body: segments.slice(Math.max(1, Math.ceil(n * 0.2)), Math.max(1, Math.floor(n * 0.85))).map(s => s.text).join(''),
+      close: segments.slice(Math.max(1, Math.floor(n * 0.85))).map(s => s.text).join(''),
+    };
+  }
+  const parts = { open: [], body: [], close: [] };
+  segments.forEach(s => {
+    const mid = (s.start + (s.end || s.start)) / 2;
+    if (mid <= total * 0.15) parts.open.push(s.text);
+    else if (mid >= total * 0.85) parts.close.push(s.text);
+    else parts.body.push(s.text);
+  });
+  const trim = arr => arr.join('').replace(/\s+/g, '').slice(0, 600);
+  return { open: trim(parts.open), body: trim(parts.body), close: trim(parts.close) };
+}
+
+function renderScriptParts(speech) {
+  const el = $('scriptParts');
+  if (!el) return;
+  const parts = extractScriptParts(speech?.segments || (speech?.text ? [{ start: 0, end: 1, text: speech.text }] : null));
+  if (parts && (parts.open || parts.body || parts.close)) {
+    el.textContent = `【开场】${parts.open || '（无）'}\n\n【主体】${parts.body || '（无）'}\n\n【结尾】${parts.close || '（无）'}`;
+    const note = $('scriptPartsNote');
+    if (note) note.textContent = '(按时间自动分段)';
+  } else {
+    el.textContent = '（无语音内容，无法生成视频文案脚本）';
+    const note = $('scriptPartsNote');
+    if (note) note.textContent = '';
+  }
+}
+
+function renderReportFinal() { renderReport(analysisResult, speechResult); }
+
+// 用时间戳匹配 frameImages（避免索引错位导致空白图）
+function _findFrameImg(t) {
+  return (frameImages.find(f => Math.abs(f.t - t) < 0.25) || {}).img || '';
+}
+
+function renderFrames(r) {
+  $('frameCount').textContent = '('+r.frames.length+'帧)';
+  const landscape = r.width > r.height;
+  $('frameGrid').innerHTML = r.frames.map((f,i) =>
+    `<div class="frame-card">
+      <img src="${_findFrameImg(f.t)}" class="frame-img ${landscape?'landscape':''}" alt="frame">
+      <div class="frame-body">
+        <div class="frame-time">@${f.t}s</div>
+        <div class="frame-tags">
+          <span class="tag">${f.brightnessLabel}</span>
+          <span class="tag">${f.motionLabel}动</span>
+          ${f.hasText?'<span class="tag yellow">有文字</span>':''}
+          ${f.skinRatio>0.1?'<span class="tag green">人物</span>':''}
+          ${f.blueRatio>0.04?'<span class="tag blue">设备/蓝</span>':''}
+          ${f.whiteRatio>0.25?'<span class="tag purple">白底</span>':''}
+          ${f.rednessRatio>0.05?'<span class="tag red">红/暖</span>':''}
+          ${f.darkRatio>0.25?'<span class="tag">暗光</span>':''}
+          ${f.sat>100?'<span class="tag orange">高饱和</span>':''}
+        </div>
+        <div style="margin-top:0.3rem;font-size:0.65rem;color:var(--muted);">${f.shotType}</div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function renderReport(r, speech) {
+  const now = new Date().toLocaleString('zh-CN');
+  const speechLines = speech?.segments?.map(s => `| @${s.start.toFixed(1)}s | ${s.text} |`).join('\n') || '';
+  const fullText = speech?.fullText || speech?.text || '';
+
+  const md = `# 视频内容分析报告
+
+**文件**: ${r.name}
+**分析时间**: ${now}
+**分析帧数**: ${r.frames.length} 帧
+
+---
+
+## 一、基本信息
+
+| 属性 | 数值 |
+|------|------|
+| 时长 | ${r.duration.toFixed(1)} 秒 |
+| 分辨率 | ${r.width} x ${r.height} |
+| 方向 | ${r.height>r.width?'竖屏 9:16':'横屏 16:9'} |
+| 帧率 | ${r.fps} fps |
+| 总帧数 | ${r.totalFrames.toLocaleString()} |
+| 文件大小 | ${r.fileSize} MB |
+
+---
+
+## 二、语音转写
+
+${fullText ? `**转写文字（共${fullText.length}字）**:
+
+| 时间 | 内容 |
+|------|------|
+${speechLines}
+
+**关键词**: ${speech.keywords?.highFreq?.slice(0,15)?.join(' / ')||'无'}
+**动作词**: ${speech.keywords?.actions?.join(' / ')||'无'}
+**情绪词**: ${speech.keywords?.emotions?.join(' / ')||'无'}` : '未检测到语音内容'}
+
+**视频文案脚本**:
+
+${(() => { const p = extractScriptParts(speech?.segments || (speech?.text ? [{start:0,end:1,text:speech.text}] : null)); return p ? `【开场】${p.open||'（无）'}
+
+【主体】${p.body||'（无）'}
+
+【结尾】${p.close||'（无）'}` : '（无语音内容）'; })()}
+
+---
+
+## 三、深度分析报告（AI 生成）
+
+${deepReportCache || '（未进行深度分析，请在「深度拆解」标签页中执行）'}
+
+---
+
+*由 Video Content Analyzer 自动生成*
+`;
+  reportMdText = md;
+  const htmlEl = $('reportMdHtml');
+  if (htmlEl) htmlEl.innerHTML = markdownToHtml(md);
+}
+
+function downloadReport() {
+  if (!reportMdText) return;
+  const blob = new Blob([reportMdText], {type:'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'video_analysis_' + new Date().toISOString().slice(0,10) + '.md';
+  a.click();
+  toast('报告已下载');
+}
+
+async function downloadFrames() {
+  if (!frameImages.length) return;
+  for (const f of frameImages) {
+    const a = document.createElement('a');
+    a.href = f.img;
+    a.download = 'frame_' + f.t.toString().padStart(4,'0') + 's.jpg';
+    a.click();
+    await new Promise(r => setTimeout(r, 80));
+  }
+  toast('已下载 ' + frameImages.length + ' 张帧图片');
+}
+
+// ── Init ──
+$('fileInput').addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+const zone = $('uploadZone');
+zone?.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone?.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone?.addEventListener('drop', e => { e.preventDefault(); zone?.classList.remove('drag-over'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+// 点击上传区 → 触发文件选择
+zone?.addEventListener('click', () => $('fileInput').click());
+
+
+// ═══════ Qclaw恢复补丁：以下为重建的功能 ═══════
+
+// ── 进度面板：详情切换 + 日志 ──
+let _whisperLogEntries = [];
+function addWhisperLog(msg) {
+  if (!msg) return;
+  const last = _whisperLogEntries[_whisperLogEntries.length - 1];
+  if (last && last.msg === msg) return;
+  const t = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+  _whisperLogEntries.push({time: t, msg});
+  const logEl = $('whisperLog');
+  if (logEl) {
+    const line = document.createElement('div');
+    line.innerHTML = '<span style="color:#4a4d63;">[' + t + ']</span> ' + msg;
+    logEl.appendChild(line);
+    logEl.parentElement.scrollTop = logEl.parentElement.scrollHeight;
+  }
+}
+function toggleWhisperDetail() {
+  const panel = $('whisperDetailPanel');
+  const btn = $('whisperDetailToggle');
+  if (panel.classList.contains('hidden')) {
+    panel.classList.remove('hidden');
+    btn.innerHTML = '&#128065; 收起';
+  } else {
+    panel.classList.add('hidden');
+    btn.innerHTML = '&#128065; 详情';
+  }
+}
+
+// ── 覆盖 updateWhisperProgress / hideWhisperProgress（新版） ──
+_updateWhisperProgress_old = updateWhisperProgress;
+updateWhisperProgress = function(progress, detail, elapsed) {
+  show('whisperProgressWrap');
+  const pct = Math.round(Math.min(100, Math.max(0, progress)));
+  $('whisperPct').textContent = pct + '%';
+  $('whisperBar').style.width = pct + '%';
+  if (detail) {
+    $('whisperDetail').textContent = detail;
+    addWhisperLog(detail);
+  }
+  if (elapsed !== undefined && elapsed !== null) {
+    $('whisperElapsed').textContent = (typeof elapsed === 'number' ? elapsed.toFixed(1) : elapsed) + 's';
+  }
+  const hue = 220 + (pct / 100) * 60;
+  $('whisperBar').style.background = 'linear-gradient(90deg, hsl(' + hue + ',70%,60%), hsl(' + (hue+20) + ',70%,70%), hsl(' + (hue+40) + ',70%,75%))';
+};
+
+_hideWhisperProgress_old = hideWhisperProgress;
+hideWhisperProgress = function(finalPct) {
+  if (finalPct !== undefined) {
+    $('whisperPct').textContent = '100%';
+    $('whisperBar').style.width = '100%';
+    $('whisperDetail').textContent = '完成';
+    addWhisperLog('转写完成 \u2713');
+    $('whisperBar').style.transition = 'width 0.4s ease, opacity 0.6s ease 0.3s';
+    $('whisperBar').style.opacity = '0';
+    setTimeout(function() { hide('whisperProgressWrap'); }, 1500);
+  } else {
+    hide('whisperProgressWrap');
+  }
+  setTimeout(function() { _whisperLogEntries = []; }, 2000);
+};
+
+// ── 模型选择 + 重新转写 ──
+function onWhisperModelChange() {
+  const sel = $('whisperModelSelect');
+  const hint = $('whisperModelHint');
+  if (!sel || !hint) return;
+  const hints = {
+    'tiny': '\u26a1 最快速度，适合快速预览。中文准确度较低',
+    'base': '\u26a1 快速，平衡速度与质量',
+    'small': '\u2713 默认推荐，中文识别效果较好',
+    'medium': '\ud83d\udc22 最准确但最慢，占用内存大(~5GB)',
+  };
+  hint.textContent = hints[sel.value] || '';
+  if (speechResult || transcribeFile) {
+    const btn = $('btnReTranscribe');
+    if (btn) btn.style.display = '';
+  }
+}
+
+async function reTranscribe() {
+  if (!transcribeFile) { toast('请先上传视频', 'error'); return; }
+  if (transcribePollTimer) { clearInterval(transcribePollTimer); transcribePollTimer = null; }
+  speechResult = null;
+  setBadge('badgeSpeech','running','重新转写中');
+  setStep('stepUpload','running');
+  setStep('stepExtract','wait');
+  setStep('stepWhisper','wait');
+  setStep('stepDone','wait');
+  show('whisperProgressWrap');
+  _whisperLogEntries = [];
+  var logEl = $('whisperLog');
+  if (logEl) logEl.innerHTML = '';
+  updateWhisperProgress(3, '任务已创建，等待处理...', 0);
+  $('speechTimeline').innerHTML = '';
+  const modelSelect = $('whisperModelSelect');
+  const modelName = modelSelect ? modelSelect.value : 'small';
+  $('whisperModelHint').textContent = '(加载 ' + modelName + ' 模型中...首次切换模型需 10~30 秒)';
+  toast('正在用 ' + modelName + ' 模型重新转写...');
+  const jobId = await startTranscription(transcribeFile, transcribeDuration);
+  if (jobId) {
+    transcribeJobId = jobId;
+    setStep('stepUpload','done','完成');
+    setBadge('badgeSpeech','running','转写中');
+    updateWhisperProgress(5, '任务已创建，等待处理...', 0);
+    $('whisperModelHint').textContent = '';
+    transcribePollTimer = setInterval(function() { pollTranscribeResult(jobId); }, 2000);
+    pollTranscribeResult(jobId);
+  } else {
+    setBadge('badgeSpeech','fail','启动失败');
+    setStep('stepUpload','fail');
+    $('speechTimeline').innerHTML = '<div style="color:var(--red);font-size:0.8rem;padding:1rem 0;">重新转写启动失败，请确认转写服务已启动。</div>';
+  }
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// 深度分析（一句话内核/三大论点/陷阱反例/作者局限/三句话）
+// ═══════════════════════════════════════════════════════════════
+function onProviderChange() {
+  const p = $('deepProvider').value;
+  $('deepApiKey').style.display = (p === 'ollama') ? 'none' : '';
+  $('deepOllamaBase').style.display = (p === 'ollama') ? '' : 'none';
+  const btnOllama = $('deepBtnOllama');
+  if (btnOllama) btnOllama.style.display = (p === 'ollama') ? '' : 'none';
+  // 重置
+  $('deepModelWrap').style.display = 'none';
+  $('deepReportError').style.display = 'none';
+  $('deepReportContent').style.display = 'none';
+  $('deepReportActions').style.display = 'none';
+  $('deepReportStatus').textContent = '';
+}
+
+async function testApiKey() {
+  const provider = $('deepProvider').value;
+  const apiKey = $('deepApiKey').value.trim();
+  if (provider !== 'ollama' && !apiKey) { showDeepError('请先输入 API Key'); return; }
+  $('deepReportStatus').textContent = '验证中...';
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/test-api-key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ api_key: apiKey, provider }),
+    });
+    const data = await resp.json();
+    if (data.ok && data.available_models && data.available_models.length) {
+      const sel = $('deepModelSelect');
+      sel.innerHTML = '';
+      data.available_models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id; opt.textContent = m.name || m.id;
+        sel.appendChild(opt);
+      });
+      $('deepModelWrap').style.display = 'flex';
+      $('deepReportStatus').textContent = '验证通过 ✓ ' + data.available_models.length + ' 个模型';
+      $('deepReportError').style.display = 'none';
+    } else {
+      showDeepError(data.error || '验证失败');
+    }
+  } catch(e) { showDeepError('网络错误: ' + e.message); }
+}
+
+async function testOllama() {
+  $('deepReportStatus').textContent = '检测 Ollama...';
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/test-api-key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ provider: 'ollama', ollama_base: $('deepOllamaBase').value }),
+    });
+    const data = await resp.json();
+    if (data.ok && data.available_models && data.available_models.length) {
+      const sel = $('deepModelSelect');
+      sel.innerHTML = '';
+      data.available_models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id; opt.textContent = m.name || m.id;
+        sel.appendChild(opt);
+      });
+      $('deepModelWrap').style.display = 'flex';
+      $('deepReportStatus').textContent = 'Ollama 已连接 ✓ ' + data.available_models.length + ' 个模型';
+    } else {
+      showDeepError(data.error || 'Ollama 未响应');
+    }
+  } catch(e) { showDeepError('Ollama 错误: ' + e.message); }
+}
+
+async function doDeepAnalysis() {
+  if (!analysisResult || !speechResult) { showDeepError('请先完成视频分析（画面 + 语音转写）'); return; }
+  const provider = $('deepProvider').value;
+  const apiKey = $('deepApiKey').value.trim();
+  const model = $('deepModelSelect').value;
+  if (provider !== 'ollama' && !apiKey) { showDeepError('请先验证 API Key'); return; }
+  if (!model) { showDeepError('请先选择模型'); return; }
+
+  $('deepReportLoading').style.display = 'block';
+  $('deepReportError').style.display = 'none';
+  $('deepReportContent').style.display = 'none';
+  $('deepReportActions').style.display = 'none';
+  $('deepBtnCancel').style.display = '';
+  $('deepReportStatus').textContent = '';
+  setDeepProgress(5, '正在组装分析数据...');
+
+  const payload = {
+    transcription: {
+      text: speechResult.text || speechResult.fullText || '',
+      language: 'zh',
+      segments: speechResult.segments || [],
+      keywords: speechResult.keywords || {},
+    },
+    analysis: analysisResult,
+    video_meta: { width: analysisResult.width, height: analysisResult.height, fps: analysisResult.fps, duration: analysisResult.duration },
+    api_key: apiKey,
+    model,
+    provider,
+    ollama_base: $('deepOllamaBase').value || undefined,
+  };
+
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/analyze-copy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.error) { setDeepProgress(0, ''); showDeepError(data.error); return; }
+    if (data.job_id) {
+      deepAnalysisJobId = data.job_id;
+      // 轮询状态
+      deepAnalysisPollTimer = setInterval(function() { pollDeepAnalysis(); }, 2000);
+      pollDeepAnalysis();
+    }
+  } catch(e) {
+    setDeepProgress(0, '');
+    showDeepError('请求失败: ' + e.message);
+  }
+}
+
+async function pollDeepAnalysis() {
+  if (!deepAnalysisJobId) return;
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/analyze-status/' + deepAnalysisJobId);
+    const data = await resp.json();
+    // 任务不存在（服务重启后内存清空）或 HTTP 错误 → 停止轮询，提示重新分析
+    if (data.error || !data.status) {
+      clearInterval(deepAnalysisPollTimer);
+      deepAnalysisPollTimer = null;
+      $('deepBtnCancel').style.display = 'none';
+      setDeepProgress(0, '');
+      showDeepError((data.error || '任务不存在') + '。服务可能已重启，请点击「启动深度分析」重新执行。');
+      return;
+    }
+    if (data.status === 'analyzing' || data.status === 'starting') {
+      const p = data.progress || 30;
+      setDeepProgress(p, '大模型正在生成拆解报告（' + p + '%）...');
+    } else if (data.status === 'done') {
+      clearInterval(deepAnalysisPollTimer);
+      deepAnalysisPollTimer = null;
+      $('deepBtnCancel').style.display = 'none';
+      setDeepProgress(100, '分析完成');
+      const rResp = await fetch(TRANSCRIBE_BASE + '/api/analyze-result/' + deepAnalysisJobId);
+      const rData = await rResp.json();
+      if (rData.result?.report) {
+        deepReportCache = rData.result.report;
+        renderDeepReport(deepReportCache);
+        renderReportFinal();
+      } else {
+        showDeepError(rData.error || '分析结果为空');
+      }
+    } else if (data.status === 'error') {
+      clearInterval(deepAnalysisPollTimer);
+      deepAnalysisPollTimer = null;
+      $('deepBtnCancel').style.display = 'none';
+      setDeepProgress(0, '');
+      showDeepError(data.error || '分析失败');
+    }
+  } catch(e) { console.error('Deep poll error:', e); }
+}
+
+function cancelDeepAnalysis() {
+  if (deepAnalysisPollTimer) { clearInterval(deepAnalysisPollTimer); deepAnalysisPollTimer = null; }
+  $('deepBtnCancel').style.display = 'none';
+  setDeepProgress(0, '');
+  $('deepReportLoading').style.display = 'none';
+  $('deepReportStatus').textContent = '已取消';
+}
+
+function renderDeepReport(md) {
+  $('deepReportContent').innerHTML = markdownToHtml(md);
+  $('deepReportContent').style.display = 'block';
+  $('deepReportLoading').style.display = 'none';
+  $('deepReportActions').style.display = 'flex';
+  $('deepReportStatus').textContent = '完成 ✓';
+}
+
+function setDeepProgress(p, text) {
+  $('deepProgressBar').style.width = Math.min(100, Math.max(0, p)) + '%';
+  $('deepProgressText').textContent = text || ('进度 ' + p + '%');
+}
+
+function showDeepError(msg) {
+  $('deepReportError').textContent = msg;
+  $('deepReportError').style.display = 'block';
+  $('deepReportLoading').style.display = 'none';
+  $('deepReportStatus').textContent = '失败';
+  if ($('deepBtnCancel')) $('deepBtnCancel').style.display = 'none';
+}
+
+function downloadDeepReport() {
+  if (!deepReportCache) return;
+  const blob = new Blob([deepReportCache], {type:'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'deep_report_' + new Date().toISOString().slice(0,10) + '.md';
+  a.click();
+  toast('深度报告已下载');
+}
+
+// ── Markdown 转 HTML ──
+function markdownToHtml(md) {
+  if (!md) return '';
+  let html = md;
+  // Tables（分隔行支持 :--- 对齐格式）
+  html = html.replace(/(\n\|.+\|\n\|[\-| :]+\|\n((?:\|.+\|\n)*))/g, function(m) {
+    const rows = m.trim().split('\n').filter(function(r) { return r.includes('|'); });
+    if (rows.length < 2) return m;
+    let table = '<table>';
+    rows.forEach(function(row, i) {
+      // 跳过分隔行（| :--- | :--- |）
+      if (i === 1 && /^\|[\-| :]+\|$/.test(row.trim())) return;
+      const cells = row.split('|').filter(function(c) { return c.trim(); });
+      const tag = i === 0 ? 'th' : 'td';
+      table += '<tr>' + cells.map(function(c) { return '<' + tag + '>' + c.trim() + '</' + tag + '>'; }).join('') + '</tr>';
+    });
+    table += '</table>';
+    return '<div class="table-wrap">' + table + '</div>';
+  });
+  // Headings
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  // Bold, italic, code, hr
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/^---$/gm, '<hr>');
+  // Ordered lists
+  html = html.replace(/((?:^\d+\. .+\n?)+)/gm, function(m) {
+    const items = m.trim().split('\n').map(function(l) { return '<li>' + l.replace(/^\d+\. /, '') + '</li>'; }).join('');
+    return '<ol>' + items + '</ol>';
+  });
+  // Unordered lists
+  html = html.replace(/((?:^[\-\*] .+\n?)+)/gm, function(m) {
+    const items = m.trim().split('\n').map(function(l) { return '<li>' + l.replace(/^[\-\*] /, '') + '</li>'; }).join('');
+    return '<ul>' + items + '</ul>';
+  });
+  // Blockquotes
+  html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid var(--accent);padding-left:0.8rem;color:var(--muted);margin:0.5rem 0;">$1</blockquote>');
+  // Paragraphs
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = '<p>' + html + '</p>';
+  html = html.replace(/<p><\/p>/g, '');
+  return html;
+}
+
+// ── 报告导出：文件名 + CSS ──
+function getReportFileName(ext) {
+  const rawName = (analysisResult?.name || 'video_analysis').replace(/\.[^.]+$/, '');
+  const ts = new Date().toISOString().replace(/[:T]/g, '').slice(0, 15);
+  return rawName + '_' + ts + '.' + ext;
+}
+function getReportCSS() {
+  return '* { margin: 0; padding: 0; box-sizing: border-box; } html { scroll-behavior: smooth; } body { background: #ffffff; color: #1a1a1a; font-family: Georgia, \'Times New Roman\', \'Songti SC\', \'SimSun\', serif; line-height: 1.7; padding: 2rem 1.5rem 4rem; max-width: 1300px; margin: 0 auto; -webkit-font-smoothing: antialiased; } h1, h2, h3, h4, .toc-title { font-family: Georgia, \'Times New Roman\', \'Songti SC\', \'SimSun\', serif; font-weight: 700; letter-spacing: 0.02em; } h1 { font-size: 2.2rem; line-height: 1.2; color: #1a1a1a; margin-bottom: 0.25rem; letter-spacing: 0.04em; } .subtitle { font-size: 1rem; color: #666; font-weight: 400; letter-spacing: 0.06em; border-bottom: 2px solid #e8e8e8; padding-bottom: 1.2rem; margin-bottom: 1.8rem; font-family: Georgia, \'Times New Roman\', serif; } .subtitle span { color: #b91c1c; } h2 { font-size: 1.5rem; margin-top: 2.8rem; margin-bottom: 1rem; color: #1a1a1a; display: flex; align-items: center; gap: 0.6rem; border-bottom: 1px solid #f0f0f0; padding-bottom: 0.6rem; } h2 .icon-wrap { flex-shrink: 0; color: #b91c1c; } h3 { font-size: 1.15rem; margin-top: 1.6rem; margin-bottom: 0.5rem; color: #2d2d2d; font-weight: 600; } p { margin-bottom: 0.9rem; color: #2d2d2d; } ul, ol { margin: 0.6rem 0 1.2rem 1.6rem; color: #2d2d2d; } li { margin-bottom: 0.4rem; } strong { color: #1a1a1a; font-weight: 600; } code { background: #f5f5f5; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; } hr { border: none; border-top: 1px solid #f0f0f0; margin: 2rem 0; } blockquote { border-left: 3px solid #b91c1c; padding-left: 1rem; color: #666; margin: 1rem 0; } .table-wrap { overflow-x: auto; margin: 0.8rem 0 1.2rem; -webkit-overflow-scrolling: touch; } table { width: 100%; border-collapse: collapse; font-size: 0.92rem; line-height: 1.7; min-width: 480px; } th { background: #fafafa; color: #b91c1c; border: 1px solid #eee; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; white-space: nowrap; } td { border: 1px solid #eee; padding: 0.45rem 0.7rem; color: #2d2d2d; } tbody tr:nth-child(even) td { background: #fafafa; } .layout { display: flex; gap: 3rem; align-items: flex-start; position: relative; } .toc { position: sticky; top: 2rem; flex: 0 0 220px; max-height: calc(100vh - 4rem); overflow-y: auto; padding-right: 0.5rem; border-right: 1px solid #f0f0f0; padding-top: 0.2rem; padding-bottom: 0.5rem; scrollbar-width: thin; scrollbar-color: #ddd #fff; } .toc::-webkit-scrollbar { width: 3px; } .toc::-webkit-scrollbar-track { background: #fff; } .toc::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; } .toc-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #999; margin-bottom: 1.2rem; font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; } .toc-list { display: flex; flex-direction: column; gap: 0.15rem; list-style: none; margin: 0; padding: 0; } .toc-btn { display: block; width: 100%; text-align: left; background: none; border: none; padding: 0.45rem 0.6rem; font-family: Georgia, \'Times New Roman\', \'Songti SC\', \'SimSun\', serif; font-size: 0.82rem; color: #666; cursor: pointer; border-radius: 4px; transition: color 0.2s, background 0.15s, border-color 0.2s; border-left: 2px solid transparent; line-height: 1.4; letter-spacing: 0.01em; } .toc-btn:hover { color: #1a1a1a; background: #f8f8f8; } .toc-btn.active { color: #b91c1c; background: #fcf5f5; border-left-color: #b91c1c; font-weight: 600; } .toc-btn .toc-icon { display: inline-block; width: 16px; height: 16px; margin-right: 0.4rem; vertical-align: middle; flex-shrink: 0; color: #bbb; transition: color 0.2s; } .toc-btn.active .toc-icon { color: #b91c1c; } .content { flex: 1; min-width: 0; } section { margin-bottom: 2.8rem; padding-top: 0.2rem; scroll-margin-top: 1.2rem; } .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem 2rem; background: #fafafa; border-radius: 6px; padding: 1.2rem 1.8rem; margin: 0.8rem 0 1.2rem; border: 1px solid #f0f0f0; } .info-grid .item { display: flex; gap: 0.4rem; font-size: 0.95rem; padding: 0.2rem 0; border-bottom: 1px dashed #f0f0f0; } .info-grid .item:last-child { border-bottom: none; } .info-grid .label { color: #888; min-width: 5rem; } .info-grid .value { color: #1a1a1a; font-weight: 500; } .transcript-box { background: #f8f8f8; border-radius: 4px; padding: 1rem 1.4rem; border-left: 3px solid #b91c1c; font-size: 0.95rem; color: #333; margin: 0.8rem 0; line-height: 1.9; } .analysis-section { margin-top: 1.6rem; } .analysis-section h3 { display: flex; align-items: center; gap: 0.5rem; font-size: 1.05rem; color: #1a1a1a; border-bottom: 1px solid #f0f0f0; padding-bottom: 0.3rem; } .point-card { background: #fcfcfc; border-radius: 6px; padding: 1rem 1.4rem; margin: 0.8rem 0; border: 1px solid #f0f0f0; } .point-card h4 { font-size: 0.95rem; font-weight: 600; color: #b91c1c; margin-bottom: 0.2rem; } .frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; margin: 0.8rem 0; } .frame-item { background: #fafafa; border: 1px solid #eee; border-radius: 6px; overflow: hidden; } .frame-item img { width: 100%; display: block; } .frame-item .frame-info { padding: 0.55rem 0.65rem; font-size: 0.78rem; color: #555; } .frame-item .frame-ts { font-weight: 600; color: #b91c1c; } .frame-item .frame-tags { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.2rem; } .frame-item .ftag { font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: #f0f0f0; color: #666; } .frame-item .ftag.green { background: #eef7ef; color: #2f7d43; } .frame-item .ftag.blue { background: #eef4fb; color: #27608f; } .frame-item .ftag.purple { background: #f3eefb; color: #6d4aa8; } .frame-item .ftag.red { background: #fbeeee; color: #a3312c; } .frame-item .ftag.orange { background: #fdf4ec; color: #a85a16; } .frame-item .frame-shot { font-size: 0.7rem; color: #888; margin-top: 0.2rem; } .footer-note { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid #eee; font-size: 0.78rem; color: #aaa; text-align: center; letter-spacing: 0.04em; font-family: Georgia, \'Times New Roman\', serif; } .icon-wrap { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; } .icon-wrap svg { width: 1.2em; height: 1.2em; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; } .icon-wrap.small svg { width: 1em; height: 1em; stroke-width: 2; } .toc-icon svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; } @media (max-width: 1024px) { body { padding: 1.5rem 1.2rem 3rem; } .layout { gap: 2rem; } .toc { flex: 0 0 190px; } } @media (max-width: 820px) { body { padding: 1.2rem 1rem 2.5rem; } .layout { flex-direction: column; gap: 0; } .toc { position: sticky; top: 0; z-index: 100; flex: none; width: 100%; max-height: none; overflow-y: visible; background: #ffffff; border-right: none; border-bottom: 1px solid #f0f0f0; padding: 0.6rem 0 0.4rem; margin-bottom: 1.6rem; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.02); } .toc-title { display: none; } .toc-list { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 0.2rem; padding: 0.2rem 0.1rem 0.4rem; scrollbar-width: thin; -webkit-overflow-scrolling: touch; } .toc-list::-webkit-scrollbar { height: 2px; } .toc-list::-webkit-scrollbar-track { background: #f5f5f5; border-radius: 4px; } .toc-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; } .toc-btn { white-space: nowrap; padding: 0.3rem 0.8rem; font-size: 0.75rem; border-left: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #888; } .toc-btn .toc-icon { display: none; } .toc-btn.active { color: #b91c1c; background: transparent; border-bottom-color: #b91c1c; border-left-color: transparent; } .toc-btn:hover { background: transparent; color: #1a1a1a; } h1 { font-size: 1.7rem; } .subtitle { font-size: 0.85rem; padding-bottom: 0.8rem; margin-bottom: 1.2rem; } h2 { font-size: 1.2rem; margin-top: 2rem; gap: 0.4rem; } .info-grid { grid-template-columns: 1fr; padding: 1rem 1.2rem; } .frame-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } .point-card { padding: 0.8rem 1rem; } } @media (max-width: 480px) { body { padding: 0.8rem 0.8rem 2rem; } h1 { font-size: 1.4rem; } .subtitle { font-size: 0.75rem; padding-bottom: 0.6rem; margin-bottom: 0.8rem; } h2 { font-size: 1.05rem; margin-top: 1.6rem; } .toc-btn { font-size: 0.68rem; padding: 0.2rem 0.6rem; } .toc { padding: 0.4rem 0 0.3rem; margin-bottom: 1rem; } .frame-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); } .info-grid .item { flex-wrap: wrap; } } @media print { .toc { display: none; } body { padding: 1cm 1.5cm; } .point-card { break-inside: avoid; border: 1px solid #ddd; } .frame-item { break-inside: avoid; } }';
+}
+
+// ── 帧gallery HTML（blob → base64 内嵌，保证导出后单独打开也能显示） ──
+async function getFrameGalleryHTML() {
+  if (!frameImages.length || !analysisResult) return '';
+  const items = [];
+  for (let i = 0; i < frameImages.length; i++) {
+    const fi = frameImages[i];
+    let src = '';
+    try {
+      if (fi.blob) src = await new Promise(function(resolve, reject) {
+        const r = new FileReader();
+        r.onload = function() { resolve(r.result); };
+        r.onerror = reject;
+        r.readAsDataURL(fi.blob);
+      });
+      else src = fi.img || '';
+    } catch(e) { src = fi.img || ''; }
+    const f = (analysisResult.frames || []).find(function(fr) { return Math.abs(fr.t - fi.t) < 0.25; }) || {};
+    const tags = [];
+    if (f.brightnessLabel) tags.push('<span class="ftag">' + f.brightnessLabel + '</span>');
+    if (f.motionLabel) tags.push('<span class="ftag">' + f.motionLabel + '动</span>');
+    if (f.hasText) tags.push('<span class="ftag red">有文字</span>');
+    if (f.skinRatio > 0.1) tags.push('<span class="ftag green">人物</span>');
+    if (f.blueRatio > 0.04) tags.push('<span class="ftag blue">设备/蓝</span>');
+    if (f.whiteRatio > 0.25) tags.push('<span class="ftag purple">白底</span>');
+    if (f.darkRatio > 0.25) tags.push('<span class="ftag">暗光</span>');
+    items.push('<div class="frame-item">\n<img src="' + src + '" alt="frame ' + (i+1) + '" loading="lazy">\n<div class="frame-info">\n<span class="frame-ts">@' + fi.t.toFixed(1) + 's</span>\n<div class="frame-tags">' + tags.join('') + '</div>\n' + (f.shotType ? '<div class="frame-shot">' + f.shotType + '</div>' : '') + '\n</div>\n</div>');
+  }
+  return '<div class="frame-grid">' + items.join('') + '</div>';
+}
+
+// ── HTML报告字符串生成（精致阅读风格：白底红点缀衬线 + 粘性目录） ──
+function _icon(name, size) {
+  const s = size || 16;
+  const p = {
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    compass: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+    upwind: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
+    list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+    quote: '<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>',
+  };
+  return '<svg class="icon" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (p[name] || '') + '</svg>';
+}
+
+// 从深度分析 markdown 提取"一句话内核"（### 一句话内核 后的第一段）
+function _extractOneLiner(md) {
+  if (!md) return '';
+  const m = md.match(/###\s*一句话内核\s*\n([^\n#]+)/);
+  return m ? m[1].trim() : '';
+}
+
+async function getReportHTMLString(cssFileName) {
+  const rawName = (analysisResult?.name || '未知').replace(/\.[^.]+$/, '');
+  const now = new Date().toLocaleString('zh-CN');
+  const cssLink = cssFileName
+    ? '<link rel="stylesheet" href="' + cssFileName + '">'
+    : '<style>' + getReportCSS() + '</style>';
+  const frameGalleryHTML = await getFrameGalleryHTML();
+  const oneLiner = _extractOneLiner(deepReportCache);
+  const dur = analysisResult ? analysisResult.duration.toFixed(1) + ' 秒' : '--';
+  const res = analysisResult ? analysisResult.width + '\u00d7' + analysisResult.height : '--';
+  const dir = analysisResult ? (analysisResult.height > analysisResult.width ? '竖屏' : '横屏') : '--';
+
+  // Lucide 内联 SVG（复盘文档风格：stroke 线性图标）
+  const IC = function(name, cls) {
+    const p = {
+      info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+      mic: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/><path d="M19 5.5a8 8 0 0 1 0 13"/>',
+      search: '<path d="M21 21 15 15"/><path d="M3 3 9 9"/><circle cx="12" cy="12" r="3"/><path d="M12 5v2"/><path d="M12 17v2"/><path d="M5 12H3"/><path d="M21 12h-2"/><path d="M7.05 7.05 5.64 5.64"/><path d="M16.95 16.95 18.36 18.36"/><path d="M18.36 5.64 16.95 7.05"/><path d="M5.64 18.36 7.05 16.95"/>',
+      image: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+      clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    };
+    return '<span class="' + (cls || 'icon-wrap') + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + (p[name] || '') + '</svg></span>';
+  };
+
+  // 语音转写分段
+  const segs = (speechResult && speechResult.segments) ? speechResult.segments.map(function(s) {
+    const m = Math.floor(s.start / 60), sec = Math.floor(s.start % 60);
+    const t = String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+    return '<p style="margin-bottom:0.4rem;"><strong>' + t + '</strong> ' + s.text + '</p>';
+  }).join('') : '<p style="margin:0;">（未检测到语音内容）</p>';
+
+  // 视频文案脚本（开场/主体/结尾）
+  const sp = extractScriptParts(speechResult && speechResult.segments ? speechResult.segments : (speechResult && speechResult.text ? [{start:0,end:1,text:speechResult.text}] : null));
+  const scriptPartsHtml = (sp && (sp.open || sp.body || sp.close)) ? '<div style="margin-top:1.3rem;padding-top:0.9rem;border-top:1px solid #f0f0f0;"><h3 style="font-size:1rem;color:#b91c1c;margin-bottom:0.4rem;">视频文案脚本</h3><p style="margin:0.35rem 0;font-size:0.92rem;color:#2d2d2d;"><strong>【开场】</strong> ' + (sp.open || '（无）') + '</p><p style="margin:0.35rem 0;font-size:0.92rem;color:#2d2d2d;"><strong>【主体】</strong> ' + (sp.body || '（无）') + '</p><p style="margin:0.35rem 0;font-size:0.92rem;color:#2d2d2d;"><strong>【结尾】</strong> ' + (sp.close || '（无）') + '</p></div>' : '';
+
+  const deepHtml = deepReportCache
+    ? '<div class="analysis-section">' + markdownToHtml(deepReportCache) + '</div>'
+    : '<div class="placeholder-text" style="color:#666;background:#fcfcfc;padding:0.6rem 1rem;border-radius:4px;border:1px solid #f5f5f5;margin:0.4rem 0;">尚未进行深度分析，请在页面「深度拆解」标签页中执行。</div>';
+
+  // 滚动高亮 + 点击滚动（IntersectionObserver + scrollTo，全部内联）
+  const js = '(function(){var B=document.querySelectorAll(\'.toc-btn\'),S=[];B.forEach(function(b){var s=document.getElementById(b.getAttribute(\'data-target\'));if(s)S.push({b:b,s:s});});if(!S.length)return;B.forEach(function(b){b.addEventListener(\'click\',function(e){e.preventDefault();var t=document.getElementById(this.getAttribute(\'data-target\'));if(t){var th=document.getElementById(\'tocNav\')?document.getElementById(\'tocNav\').offsetHeight:0;window.scrollTo({top:t.getBoundingClientRect().top+window.pageYOffset-th-12,behavior:\'smooth\'});}});});var obs=new IntersectionObserver(function(es){var ai=-1,md=Infinity;es.forEach(function(en){if(en.isIntersecting){var d=Math.abs(en.target.getBoundingClientRect().top);if(d<md){md=d;var i=S.findIndex(function(x){return x.s===en.target;});if(i!==-1)ai=i;}}});if(ai===-1){var ci=-1,cd=Infinity;S.forEach(function(x,i){var d=Math.abs(x.s.getBoundingClientRect().top);if(d<cd){cd=d;ci=i;}});if(ci!==-1&&cd<400)ai=ci;}S.forEach(function(x,i){x.b.classList.toggle(\'active\',i===ai);});},{root:null,rootMargin:\'-80px 0px -40% 0px\',threshold:[0,0.1,0.2,0.3,0.4,0.5]});S.forEach(function(x){obs.observe(x.s);});setTimeout(function(){if(S.length&&S[0].s.getBoundingClientRect().top<200){S.forEach(function(x,i){x.b.classList.toggle(\'active\',i===0);});}},300);})();';
+
+  return '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>视频深度复盘 · ' + rawName + '</title>\n' + cssLink + '\n</head>\n<body>\n<header>\n<h1>' + rawName + '</h1>\n<div class="subtitle">视频深度复盘 · <span>' + (oneLiner || '结构预览') + '</span></div>\n</header>\n<div class="layout">\n<nav class="toc" id="tocNav" aria-label="目录导航">\n<div class="toc-title">目录</div>\n<ul class="toc-list">\n<li><button class="toc-btn" data-target="section-basic">' + IC('info', 'toc-icon') + '<span class="toc-label">基本信息</span></button></li>\n<li><button class="toc-btn" data-target="section-transcript">' + IC('mic', 'toc-icon') + '<span class="toc-label">语音转写</span></button></li>\n<li><button class="toc-btn" data-target="section-analysis">' + IC('search', 'toc-icon') + '<span class="toc-label">深度分析</span></button></li>\n<li><button class="toc-btn" data-target="section-frames">' + IC('image', 'toc-icon') + '<span class="toc-label">关键帧画面</span></button></li>\n</ul>\n</nav>\n<main class="content">\n<section id="section-basic">\n<h2>' + IC('info') + '一、基本信息</h2>\n<div class="info-grid">\n<div class="item"><span class="label">视频标题</span><span class="value">' + rawName + '</span></div>\n<div class="item"><span class="label">分析时间</span><span class="value">' + now + '</span></div>\n<div class="item"><span class="label">时长</span><span class="value">' + dur + '</span></div>\n<div class="item"><span class="label">分辨率</span><span class="value">' + res + '</span></div>\n<div class="item"><span class="label">方向</span><span class="value">' + dir + '</span></div>\n<div class="item"><span class="label">分析帧数</span><span class="value">' + (analysisResult ? analysisResult.frames.length + ' 帧' : '--') + '</span></div>\n</div>\n</section>\n<section id="section-transcript">\n<h2>' + IC('mic') + '二、语音转写</h2>\n<div class="transcript-box">' + segs + '</div>\n' + scriptPartsHtml + '\n</section>\n<section id="section-analysis">\n<h2>' + IC('search') + '三、深度分析报告 <span style="font-size:0.7rem;font-weight:400;color:#999;">(AI 生成)</span></h2>\n' + deepHtml + '\n</section>\n<section id="section-frames">\n<h2>' + IC('image') + '四、关键帧画面</h2>\n' + frameGalleryHTML + '\n</section>\n</main>\n</div>\n<div class="footer-note">视频深度复盘 · 由 Video Content Analyzer 生成 · ' + now + '</div>\n<scr' + 'ipt>' + js + '</scr' + 'ipt>\n</body>\n</html>';
+}
+
+// ── 合并帧图片（按视频实际宽高比） ──
+async function mergeFramesToBlob() {
+  const vw = analysisResult?.width || 1920;
+  const vh = analysisResult?.height || 1080;
+  const isPortrait = vh > vw;
+  const baseSize = 640;
+  let cellW, cellH;
+  if (isPortrait) { cellH = baseSize; cellW = Math.round(baseSize * vw / vh); }
+  else { cellW = baseSize; cellH = Math.round(baseSize * vh / vw); }
+  const cols = Math.min(frameImages.length, isPortrait ? 4 : 3);
+  const rows = Math.ceil(frameImages.length / cols);
+  const labelH = 44, gap = 14, pad = 30, titleH = 50;
+  const canvasW = pad * 2 + cols * cellW + (cols - 1) * gap;
+  const canvasH = pad * 2 + titleH + rows * (cellH + labelH) + (rows - 1) * gap;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasW; canvas.height = canvasH;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0f1117'; ctx.fillRect(0, 0, canvasW, canvasH);
+  const videoName = (analysisResult?.name || 'video').replace(/\.[^.]+$/, '');
+  ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 24px "Microsoft YaHei",sans-serif';
+  ctx.fillText(videoName + ' — 关键帧画面', pad, pad + 28);
+  ctx.fillStyle = '#6b7084'; ctx.font = '14px "Microsoft YaHei",sans-serif';
+  ctx.fillText('共 ' + frameImages.length + ' 帧', pad, pad + 46);
+  for (let i = 0; i < frameImages.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = pad + col * (cellW + gap), y = pad + titleH + row * (cellH + labelH + gap);
+    try {
+      const img = new Image(); img.src = frameImages[i].img;
+      await new Promise(function(res, rej) { img.onload = res; img.onerror = rej; });
+      const scale = Math.max(cellW / img.width, cellH / img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      const dx = x + (cellW - dw) / 2, dy = y + (cellH - dh) / 2;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, cellW, cellH); ctx.clip();
+      ctx.drawImage(img, dx, dy, dw, dh); ctx.restore();
+    } catch(e) {}
+    ctx.fillStyle = '#1e2130'; ctx.fillRect(x, y + cellH, cellW, labelH);
+    ctx.fillStyle = '#6366f1'; ctx.fillRect(x, y + cellH, 4, labelH);
+    ctx.fillStyle = '#818cf8'; ctx.font = 'bold 18px "Courier New",monospace';
+    ctx.fillText('@' + frameImages[i].t.toFixed(1) + 's', x + 14, y + cellH + 28);
+    ctx.fillStyle = '#6b7084'; ctx.font = '14px sans-serif';
+    ctx.fillText('#' + (i + 1) + '/' + frameImages.length, x + cellW - 80, y + cellH + 28);
+  }
+  return new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); });
+}
+
+// ── 下载函数 ──
+async function downloadReportHTML() {
+  if (!reportMdText) return;
+  toast('正在生成 HTML 报告...');
+  const html = await getReportHTMLString(null);
+  const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = getReportFileName('html'); a.click();
+  toast('HTML 报告已下载');
+}
+function downloadReportMarkdown() {
+  if (!reportMdText) return;
+  const blob = new Blob([reportMdText], {type: 'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = getReportFileName('md'); a.click();
+  toast('Markdown 报告已下载');
+}
+async function downloadMergedFrames() {
+  if (!frameImages.length) { toast('无帧图片', 'error'); return; }
+  toast('正在合并帧图片...');
+  try {
+    const blob = await mergeFramesToBlob();
+    if (!blob) { toast('合并失败', 'error'); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = getReportFileName('png'); a.click();
+    toast('帧图片已合并下载（' + frameImages.length + ' 帧）');
+  } catch(e) { toast('合并失败: ' + e.message, 'error'); }
+}
+
+// ── 保存到项目目录 ──
+async function downloadAll() {
+  if (!reportMdText) { toast('无报告内容', 'error'); return; }
+  toast('正在保存到项目目录...');
+  const rawName = (analysisResult?.name || 'video_analysis').replace(/\.[^.]+$/, '');
+  const ts = new Date().toISOString().replace(/[:T]/g, '').slice(0, 15);
+  const baseName = rawName + '_' + ts;
+  try {
+    const formData = new FormData();
+    formData.append('folder_name', baseName);
+    const htmlBlob = new Blob([await getReportHTMLString('report_style.css')], {type: 'text/html;charset=utf-8'});
+    formData.append('html', htmlBlob, baseName + '.html');
+    const cssBlob = new Blob([getReportCSS()], {type: 'text/css;charset=utf-8'});
+    formData.append('css', cssBlob, 'report_style.css');
+    const mdBlob = new Blob([reportMdText], {type: 'text/markdown;charset=utf-8'});
+    formData.append('markdown', mdBlob, baseName + '.md');
+    if (frameImages.length) {
+      const pngBlob = await mergeFramesToBlob();
+      if (pngBlob) formData.append('png', pngBlob, baseName + '.png');
+    }
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/save-export', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.status === 'ok') { toast('已保存到: ' + data.path); }
+    else { toast('保存失败: ' + (data.error || '未知错误'), 'error'); }
+  } catch(e) { toast('保存失败: ' + e.message, 'error'); }
+}
+
+// ── 下载ZIP（备选） ──
+async function downloadAllZip() {
+  if (typeof JSZip === 'undefined') { toast('JSZip 未加载，请检查网络', 'error'); return; }
+  if (!reportMdText) { toast('无报告内容', 'error'); return; }
+  toast('正在打包...');
+  const zip = new JSZip();
+  const rawName = (analysisResult?.name || 'video_analysis').replace(/\.[^.]+$/, '');
+  const ts = new Date().toISOString().replace(/[:T]/g, '').slice(0, 15);
+  const baseName = rawName + '_' + ts;
+  const folder = zip.folder(baseName);
+  const htmlFolder = folder.folder('html');
+  htmlFolder.file('report_style.css', getReportCSS());
+  htmlFolder.file(baseName + '.html', await getReportHTMLString('report_style.css'));
+  const mdFolder = folder.folder('markdown');
+  mdFolder.file(baseName + '.md', reportMdText);
+  if (frameImages.length) {
+    const picFolder = folder.folder('pic');
+    try {
+      const mergedBlob = await mergeFramesToBlob();
+      if (mergedBlob) picFolder.file(baseName + '.png', mergedBlob);
+    } catch(e) { console.warn('Frame merge failed in ZIP:', e); }
+  }
+  zip.generateAsync({type: 'blob'}).then(function(blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = baseName + '.zip'; a.click();
+    toast('ZIP 已下载');
+  }).catch(function(err) { toast('打包失败: ' + err.message, 'error'); });
+}
+
+</script>
+
+</body>
+</html>

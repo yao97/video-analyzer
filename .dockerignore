@@ -1,0 +1,35 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── 临时开发脚本（本项目根目录有大量 _*.py / _*.js 调试脚本） ──
+_*.py
+_*.js
+_*.html
+_*.tmp
+
+# ── 数据与导出 ──
+exports/
+*.mp4
+*.wav
+*.log
+
+# ── Git ──
+.git/
+.gitignore
+
+# ── 环境 ──
+.env
+.env.local
+
+# ── 系统 ──
+.DS_Store
+Thumbs.db
+
+# ── 编辑器 ──
+.vscode/
+.idea/

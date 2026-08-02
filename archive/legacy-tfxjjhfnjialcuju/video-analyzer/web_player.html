@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>&#127909;</text></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Content Analyzer v3</title>
+<style>
+
+:root {
+  --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+  --text: #e2e8f0; --muted: #6b7084;
+  --accent: #6366f1; --accent2: #818cf8;
+  --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+  --green: #6ee7b7; --purple: #a78bfa;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter','Microsoft YaHei',-apple-system,sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+/* Header */
+header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0.85rem 2rem; display: flex; align-items: center; gap: 0.8rem; position: sticky; top: 0; z-index: 100; }
+header h1 { font-size: 1.1rem; font-weight: 700; }
+header .sub { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+
+/* Container */
+.container { max-width: 1400px; margin: 0 auto; padding: 1.2rem 2rem; }
+
+/* Upload */
+.upload-zone { border: 2px dashed var(--border); border-radius: 14px; padding: 2.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--card); margin-bottom: 1.2rem; }
+.upload-zone:hover { border-color: var(--accent); background: rgba(99,102,241,0.04); }
+.upload-zone .icon-big { font-size: 2.5rem; margin-bottom: 0.4rem; }
+.upload-zone h2 { font-size: 0.98rem; margin-bottom: 0.3rem; }
+.upload-zone p { color: var(--muted); font-size: 0.76rem; }
+.upload-zone input[type=file] { display: none; }
+
+/* Feature badges */
+.badges-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.badge { display: inline-flex; align-items: center; gap: 0.35rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.78rem; font-weight: 600; }
+.badge .icon { font-size: 0.95rem; }
+.badge.ok { border-color: rgba(16,185,129,0.4); color: var(--green); }
+.badge.fail { border-color: rgba(239,68,68,0.3); color: var(--red); }
+.badge.wait, .badge.running { border-color: rgba(251,191,36,0.3); color: var(--yellow); }
+
+/* Metrics */
+.metrics-bar { display: grid; grid-template-columns: repeat(6,1fr); gap: 0.6rem; margin-bottom: 1.2rem; }
+.metric-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 0.9rem; }
+.metric-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0.15rem; }
+.metric-value { font-size: 1.15rem; font-weight: 700; }
+.metric-sub { font-size: 0.65rem; color: var(--muted); }
+
+/* Sections */
+.section { margin-bottom: 1.8rem; }
+.section-title { font-size: 0.88rem; font-weight: 600; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+.section-title span { color: var(--accent2); }
+.section-title .count { font-size: 0.72rem; color: var(--muted); font-weight: 400; margin-left: 0.3rem; }
+
+/* Tabs */
+.tabs { display: flex; gap: 0.15rem; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tab { padding: 0.45rem 0.9rem; cursor: pointer; border: none; background: none; color: var(--muted); font-size: 0.8rem; border-bottom: 2px solid transparent; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 0.3rem; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Frame Grid */
+.frame-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 0.75rem; }
+.frame-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: transform 0.2s, border-color 0.2s; }
+.frame-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.frame-img { width: 100%; aspect-ratio: 9/16; object-fit: cover; display: block; }
+.frame-img.landscape { aspect-ratio: 16/9; }
+.frame-body { padding: 0.6rem; }
+.frame-time { font-size: 0.68rem; font-weight: 600; color: var(--accent2); background: rgba(99,102,241,0.12); display: inline-block; padding: 0.15rem 0.45rem; border-radius: 20px; margin-bottom: 0.3rem; }
+.frame-tags { display: flex; flex-wrap: wrap; gap: 0.18rem; }
+.tag { font-size: 0.6rem; padding: 0.13rem 0.35rem; border-radius: 4px; background: #232636; border: 1px solid var(--border); color: #a1a1aa; }
+.tag.yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: #fcd34d; }
+.tag.green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); color: #6ee7b7; }
+.tag.blue { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.3); color: #93c5fd; }
+.tag.purple { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.3); color: #c4b5fd; }
+.tag.red { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+.tag.orange { background: rgba(251,146,60,0.12); border-color: rgba(251,146,60,0.3); color: #fdba74; }
+.tag.pink { background: rgba(244,114,182,0.12); border-color: rgba(244,114,182,0.3); color: #f9a8d4; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.data-table-wrapper { overflow-x: auto; max-width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+.data-table th { color: var(--muted); font-size: 0.6rem; text-transform: uppercase; padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; background: var(--card); }
+.data-table td { padding: 0.38rem 0.6rem; font-size: 0.76rem; border-bottom: 1px solid #1e2130; color: #d1d5db; white-space: nowrap; }
+.data-table tr:hover td { background: rgba(99,102,241,0.04); }
+.data-table tr:last-child td { border-bottom: none; }
+
+/* Ensure tables scroll properly in right panel */
+body.video-active .section > div[style*="overflow-x:auto"] {
+  max-width: 100%;
+}
+
+/* Responsive adjustments for video-active layout */
+@media(max-width: 1100px) {
+  body.video-active #leftPanel {
+    width: 280px !important;
+  }
+}
+@media(max-width: 900px) {
+  body.video-active .container {
+    flex-direction: column !important;
+  }
+  body.video-active #leftPanel {
+    width: 100% !important;
+    position: relative !important;
+    max-height: none !important;
+  }
+  body.video-active #rightPanel {
+    max-width: 100% !important;
+  }
+}
+
+/* Speech */
+.speech-timeline { display: flex; flex-direction: column; gap: 0.55rem; }
+.speech-segment { display: flex; gap: 0.75rem; align-items: flex-start; }
+.speech-time { font-size: 0.68rem; color: var(--accent2); font-weight: 600; background: rgba(99,102,241,0.1); padding: 0.18rem 0.45rem; border-radius: 6px; white-space: nowrap; min-width: 48px; text-align: center; margin-top: 2px; flex-shrink: 0; }
+.speech-text { font-size: 0.8rem; color: var(--text); line-height: 1.7; flex: 1; }
+.speech-text .kw { background: rgba(251,191,36,0.12); color: var(--yellow); padding: 0.08rem 0.25rem; border-radius: 3px; font-weight: 600; }
+.speech-text .aw { background: rgba(99,102,241,0.12); color: var(--accent2); padding: 0.08rem 0.25rem; border-radius: 3px; font-weight: 600; }
+
+/* Progress */
+.progress-label { font-size: 0.68rem; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 0.12rem; }
+.progress-bar { height: 4px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 0.65rem; }
+.progress-fill { height: 100%; border-radius: 3px; }
+
+/* Spinner */
+.spinner-overlay { position: fixed; inset: 0; background: rgba(15,17,23,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; gap: 0.85rem; }
+.spinner { width: 38px; height: 38px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-text { color: var(--text); font-size: 0.85rem; }
+.spinner-sub { color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; }
+.spinner-progress { width: 200px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.spinner-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+/* Toast */
+.toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1.15rem; font-size: 0.8rem; z-index: 2000; transform: translateY(80px); opacity: 0; transition: all 0.3s; max-width: 260px; line-height: 1.5; }
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: rgba(16,185,129,0.5); }
+.toast.error { border-color: rgba(239,68,68,0.5); }
+.toast.info { border-color: rgba(99,102,241,0.5); }
+
+/* Buttons */
+.btn { padding: 0.45rem 0.9rem; border-radius: 7px; border: none; font-size: 0.78rem; cursor: pointer; font-family: inherit; transition: opacity 0.2s; }
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+
+/* Copy analysis box */
+.copy-analysis { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; }
+.copy-section { margin-bottom: 0.8rem; }
+.copy-section:last-child { margin-bottom: 0; }
+.copy-section-title { font-size: 0.75rem; font-weight: 600; margin-bottom: 0.35rem; }
+.copy-tags { display: flex; flex-wrap: wrap; gap: 0.28rem; }
+.copy-tag { font-size: 0.7rem; padding: 0.22rem 0.55rem; border-radius: 6px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); color: var(--accent2); }
+.copy-tag.yellow { background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.3); color: var(--yellow); }
+.copy-tag.green { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: var(--green); }
+.copy-tag.red { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--red); }
+.copy-tag.purple { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.3); color: var(--purple); }
+
+/* Transcribe status */
+.transcribe-status { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.transcribe-steps { display: flex; flex-direction: column; gap: 0.5rem; }
+.transcribe-step { display: flex; align-items: center; gap: 0.6rem; font-size: 0.78rem; }
+.step-icon { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; flex-shrink: 0; }
+.step-icon.done { background: var(--green); color: #000; }
+.step-icon.running { background: var(--yellow); color: #000; animation: spin 1s linear infinite; }
+.step-icon.wait { background: var(--border); color: var(--muted); }
+.step-icon.fail { background: var(--red); color: #fff; }
+.step-text { color: var(--text); }
+.step-text.wait { color: var(--muted); }
+.step-time { margin-left: auto; font-size: 0.68rem; color: var(--muted); }
+
+/* Hidden */
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@media(max-width: 900px) {
+  .metrics-bar { grid-template-columns: repeat(3,1fr); }
+  .frame-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Video-active layout: flex container ── */
+body.video-active header {
+  display: none !important;
+}
+body.video-active .container {
+  display: flex !important;
+  gap: 1.5rem;
+  max-width: 100% !important;
+  padding: 1rem 1.5rem !important;
+  align-items: flex-start;
+  margin: 0 !important;
+}
+/* Left: video panel - sticky positioning */
+body.video-active #leftPanel {
+  display: block !important;
+  width: 340px !important;
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  top: 1rem !important;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+/* Hide scrollbar on left panel */
+body.video-active #leftPanel::-webkit-scrollbar { width: 3px; }
+body.video-active #leftPanel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Right: analysis content */
+body.video-active #rightPanel {
+  display: block !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  overflow-x: hidden;
+}
+/* Tab panels should handle overflow */
+body.video-active .tab-panel {
+  max-width: 100%;
+  min-width: 0;
+}
+/* Ensure tables and content don't overflow */
+body.video-active .tab-panel > * {
+  max-width: 100%;
+}
+/* Hide mainLayout wrapper (we don't need it) */
+#mainLayout { display: none !important; }
+body.video-active #mainLayout { display: flex !important; flex-direction: row !important; width: 100% !important; }
+
+</style>
+</head>
+<body>
+<div id="spinner" class="spinner-overlay hidden">
+<div class="spinner"></div>
+<div class="spinner-text" id="spinnerText">正在处理...</div>
+<div class="spinner-sub" id="spinnerSub">准备中</div>
+<div class="spinner-progress"><div class="spinner-progress-fill" id="spinnerFill" style="width:0%"></div></div>
+</div>
+<div id="toast" class="toast"></div>
+<header>
+<div style="font-size:1.4rem;">&#127909;</div>
+<div><h1>Video Content Analyzer</h1><div class="sub">上传视频 &rarr; 画面分析 &rarr; 语音转写 &rarr; 深度拆解</div></div>
+</header>
+<div id="mainLayout">
+<div class="container" id="uploadContainer">
+<div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+<div class="icon-big">&#128229;</div>
+<h2>点击上传视频文件</h2>
+<p>支持 MP4 / MOV / AVI / WebM，最大 600MB</p>
+<input type="file" id="fileInput" accept="video/*" style="display:none">
+</div>
+</div>
+<div id="mainContent" class="container hidden">
+<div id="leftPanel">
+<video id="videoPreview" controls style="width:100%;border-radius:10px;background:#000;display:block;"></video>
+<div id="previewMeta" style="font-size:0.72rem;color:#6b7084;margin-top:0.5rem;line-height:1.8;"></div>
+<div id="speechPreviewSection" style="margin-top:1rem;">
+<div style="font-weight:600;font-size:0.8rem;margin-bottom:0.4rem;">&#127911; 语音转写</div>
+<div id="speechPreviewText" style="font-size:0.78rem;color:#6b7084;">等待分析...</div>
+</div>
+</div>
+<div id="rightPanel">
+<div id="featureBadges" class="badges-row hidden">
+<div class="badge wait" id="badgeColor"><span>&#127912;</span><span>画面分析</span><span id="badgeColorText">等待</span></div>
+<div class="badge wait" id="badgeSpeech"><span>&#127911;</span><span>语音转写</span><span id="badgeSpeechText">等待</span></div>
+<div class="badge wait" id="badgeCopy"><span>&#128221;</span><span>文案生成</span><span id="badgeCopyText">等待</span></div>
+</div>
+<div id="metricsSection" class="metrics-bar hidden">
+<div class="metric-card"><div class="metric-label">时长</div><div class="metric-value" id="mDuration">--</div><div class="metric-sub" id="mOrientation">--</div></div>
+<div class="metric-card"><div class="metric-label">分辨率</div><div class="metric-value" id="mResolution">--</div><div class="metric-sub">H.264</div></div>
+<div class="metric-card"><div class="metric-label">帧率</div><div class="metric-value" id="mFps">--</div><div class="metric-sub">fps</div></div>
+<div class="metric-card"><div class="metric-label">总帧数</div><div class="metric-value" id="mFrames">--</div><div class="metric-sub">帧</div></div>
+<div class="metric-card"><div class="metric-label">文件大小</div><div class="metric-value" id="mSize">--</div><div class="metric-sub">MB</div></div>
+<div class="metric-card"><div class="metric-label">音轨</div><div class="metric-value" id="mAudio">--</div><div class="metric-sub" id="mAudioSub">--</div></div>
+</div>
+<div id="tabsSection" class="hidden">
+<div class="tabs">
+<button class="tab active" onclick="switchTab(this,'tabSpeech')">&#127911; 语音转写</button>
+<button class="tab" onclick="switchTab(this,'tabFrames')">&#128444; 帧预览</button>
+<button class="tab" onclick="switchTab(this,'tabDeepReport')">&#128270; 深度拆解</button>
+<button class="tab" onclick="switchTab(this,'tabReport')">&#128196; 完整报告</button>
+</div>
+<div id="tabSpeech" class="tab-panel active">
+<div class="section"><div class="section-title">&#127911; <span>语音转写</span> <span id="speechTabCount" class="count"></span></div>
+<div id="transcribeStatusBox" class="transcribe-status">
+<div class="transcribe-steps">
+<div class="transcribe-step"><span class="step-icon wait" id="stepUpload">1</span><span class="step-text">上传视频</span></div>
+<div class="transcribe-step"><span class="step-icon wait" id="stepExtract">2</span><span class="step-text">提取音频</span></div>
+<div class="transcribe-step"><span class="step-icon wait" id="stepWhisper">3</span><span class="step-text">Whisper 转写</span></div>
+<div class="transcribe-step"><span class="step-icon wait" id="stepDone">4</span><span class="step-text">完成</span></div>
+</div>
+<div id="whisperProgressWrap" class="hidden" style="margin-top:0.9rem;">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+<span style="font-size:0.75rem;color:#818cf8;font-weight:600;">&#127917; Whisper 转写中</span>
+<span id="whisperPct" style="font-size:0.75rem;color:#fbbf24;font-weight:700;">40%</span>
+</div>
+<div style="height:8px;background:#2a2d3a;border-radius:6px;overflow:hidden;">
+<div id="whisperBar" style="height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:6px;transition:width 0.5s;width:40%;"></div>
+</div>
+<div id="whisperETA" style="font-size:0.68rem;color:#6b7084;margin-top:0.22rem;text-align:right;">预估剩余 <span id="whisperETASec">--</span>s</div>
+</div>
+</div>
+<div id="speechTimeline" class="speech-timeline"></div>
+</div>
+<div class="section"><div class="section-title">&#128221; <span>关键词提取</span></div>
+<div class="copy-analysis">
+<div class="copy-section"><div class="copy-section-title">高频词</div><div id="kwFreq" class="copy-tags"></div></div>
+<div class="copy-section"><div class="copy-section-title">动作词</div><div id="kwAction" class="copy-tags"></div></div>
+<div class="copy-section"><div class="copy-section-title">情绪词</div><div id="kwEmotion" class="copy-tags"></div></div>
+<div class="copy-section"><div class="copy-section-title">产品/核心词</div><div id="kwProduct" class="copy-tags"></div></div>
+</div></div>
+<div class="section"><div class="section-title">&#128221; <span>视频文案脚本</span></div>
+<div id="generatedScript" class="copy-analysis" style="font-size:0.8rem;line-height:2;color:#d1d5db;white-space:pre-wrap;"></div>
+</div>
+</div>
+<div id="tabFrames" class="tab-panel">
+<div class="section"><div class="section-title">&#128444; <span>关键帧预览</span> <span id="frameCount" class="count"></span></div>
+<div class="frame-grid" id="frameGrid"></div>
+</div>
+</div>
+<div id="tabDeepReport" class="tab-panel">
+<div class="section">
+<div class="section-title">&#128270; <span>短视频文案深度拆解报告</span> <span id="deepReportStatus" style="font-size:0.72rem;color:#6b7084;font-weight:400;"></span></div>
+
+<!-- Step 1: API Key 输入 -->
+<div id="deepStep1" style="margin-bottom:1rem;padding:0.85rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
+<div style="font-size:0.76rem;color:#6b7084;line-height:1.7;margin-bottom:0.8rem;">
+&#128270; 基于「叙事主权破局 + 反资本共情 + 5A人群流转 + 实锤卖点种草 + 信任建立体系」五位一体方法论，生成九节结构化报告。<br>
+&#9888; 支持 <strong style="color:#f87171;">SiliconFlow（硅基流动）</strong>等兼容 OpenAI 接口的大模型。
+</div>
+<div style="margin-bottom:0.7rem;">
+<label style="display:block;font-size:0.73rem;color:#6b7084;margin-bottom:0.35rem;">API Key（仅本次本地使用，不上传任何服务器）</label>
+<input id="deepApiKey" type="password" placeholder="sk-..." style="width:100%;padding:0.5rem 0.75rem;background:#0f1117;border:1px solid #2a2d3a;border-radius:8px;color:#e2e8f0;font-size:0.78rem;box-sizing:border-box;outline:none;" />
+</div>
+<div style="font-size:0.7rem;color:#4a4d63;margin-bottom:0.8rem;">SiliconFlow：<a href="https://siliconflow.cn" target="_blank" style="color:#818cf8;">siliconflow.cn</a> → 个人中心 → API Key</div>
+<button id="btnTestKey" class="btn btn-secondary" onclick="testApiKey()" style="margin-right:0.5rem;">&#10004; 验证 Key</button>
+<div id="deepKeyError" style="display:none;margin-top:0.6rem;font-size:0.73rem;color:#f87171;padding:0.5rem;background:#2d1515;border:1px solid #5c2a2a;border-radius:8px;line-height:1.6;"></div>
+</div>
+
+<!-- Step 2: 模型选择（验证通过后显示） -->
+<div id="deepStep2" style="display:none;margin-bottom:1rem;padding:0.85rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
+<div id="deepKeyOk" style="font-size:0.73rem;color:#4ade80;margin-bottom:0.7rem;">&#10004; API Key 验证通过，请选择模型</div>
+<div style="margin-bottom:0.8rem;">
+<label style="display:block;font-size:0.73rem;color:#6b7084;margin-bottom:0.35rem;">选择模型</label>
+<select id="deepModel" style="width:100%;padding:0.5rem 0.75rem;background:#0f1117;border:1px solid #2a2d3a;border-radius:8px;color:#e2e8f0;font-size:0.78rem;box-sizing:border-box;outline:none;"></select>
+</div>
+<div style="font-size:0.7rem;color:#4a4d63;margin-bottom:0.8rem;"><span id="deepModelTip"></span></div>
+<button id="btnDeepAnalyze" class="btn btn-primary" onclick="doDeepAnalysis()">&#127919; 启动深度分析</button>
+<div style="margin-top:0.5rem;"><button class="btn btn-secondary" onclick="deepGoStep1()" style="font-size:0.72rem;padding:0.3rem 0.6rem;">&#8592; 重新填写 Key</button></div>
+</div>
+
+<!-- 分析中 -->
+<div id="deepReportLoading" style="display:none;margin-bottom:1rem;padding:1.2rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;text-align:center;">
+<div style="font-size:0.82rem;margin-bottom:0.8rem;" id="deepReportLoadingText">正在生成深度拆解报告...</div>
+<div class="progress-bar" style="height:6px;background:#2a2d3a;border-radius:4px;overflow:hidden;">
+<div class="progress-fill" id="deepReportProgress" style="height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);width:0%;transition:width 0.4s;"></div>
+</div>
+<div style="font-size:0.7rem;color:#6b7084;margin-top:0.5rem;" id="deepReportProgressLabel">准备中...</div>
+<button class="btn btn-secondary" onclick="cancelDeepAnalysis()" style="margin-top:1rem;font-size:0.75rem;">&#10005; 取消分析</button>
+</div>
+
+<!-- 错误 -->
+<div id="deepReportError" style="display:none;margin:1rem 0;font-size:0.8rem;color:#f87171;padding:0.9rem;background:#2d1515;border:1px solid #5c2a2a;border-radius:10px;line-height:1.7;"></div>
+
+<!-- 报告内容 -->
+<div id="deepReportContent" class="copy-analysis" style="display:none;"></div>
+</div>
+</div>
+<div id="tabReport" class="tab-panel">
+<div class="section"><div class="section-title">&#128196; <span>完整分析报告</span></div>
+<textarea id="reportMd" readonly style="width:100%;min-height:450px;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;color:#e2e8f0;padding:1rem;font-size:0.75rem;font-family:'Courier New',monospace;line-height:1.8;resize:vertical;"></textarea>
+<div style="display:flex;gap:0.45rem;margin-top:0.75rem;flex-wrap:wrap;">
+<button class="btn btn-primary" onclick="downloadReport()">&#128229; 下载报告</button>
+<button class="btn btn-secondary" onclick="downloadFrames()">&#128230; 下载帧图片</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════
+let analysisResult = null;
+let speechResult = null;
+let frameImages = [];
+let transcribeJobId = null;
+let transcribePollTimer = null;
+
+// 深度分析状态
+let deepReportCache = null;
+let deepAbortController = null;
+let deepTimeoutId = null;
+let _deepApiVerified = false;
+let _deepModel = '';
+
+const TRANSCRIBE_BASE = 'http://192.168.0.8:8766';
+
+// Helpers
+const $ = id => document.getElementById(id);
+const show = id => $(id)?.classList.remove('hidden');
+const hide = id => $(id)?.classList.add('hidden');
+
+const toast = (msg, type='success') => {
+  const t = $('toast');
+  t.textContent = msg; t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 3500);
+};
+
+const switchTab = (btn, pid) => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  $(pid)?.classList.add('active');
+};
+
+const COLOR_RGB = {
+  '红色':'#f87171','橙色':'#fb923c','黄色':'#fbbf24','绿色':'#4ade80',
+  '青色':'#22d3ee','蓝色':'#60a5fa','紫色':'#a78bfa','粉色':'#f472b6',
+  '白色':'#f8fafc','灰色':'#94a3b8','黑色':'#374151',
+};
+const colorHex = n => COLOR_RGB[n] || '#94a3b8';
+
+function setBadge(id, status, text) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'badge ' + status;
+  const t = $(id + 'Text');
+  if (t) t.textContent = text;
+}
+
+function setStep(id, status, time) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'step-icon ' + status;
+  el.textContent = status === 'done' ? '✓' : (status === 'running' ? '●' : el.textContent.match(/\d/)?.[0] || '?');
+  if (time !== undefined) {
+    const stepEl = el.parentElement;
+    const timeEl = stepEl.querySelector('.step-time');
+    if (timeEl) timeEl.textContent = time;
+  }
+}
+
+function updateWhisperProgress(progress, estimatedRemaining) {
+  show('whisperProgressWrap');
+  const pct = Math.round(Math.min(80, progress));
+  $('whisperPct').textContent = pct + '%';
+  $('whisperBar').style.width = pct + '%';
+  if (estimatedRemaining !== undefined && estimatedRemaining > 0) {
+    $('whisperETASec').textContent = Math.round(estimatedRemaining);
+    $('whisperETA').style.display = '';
+  } else {
+    $('whisperETASec').textContent = '--';
+  }
+  const hue = 220 + (pct / 80) * 60;
+  $('whisperBar').style.background = `linear-gradient(90deg, hsl(${hue},70%,60%), hsl(${hue+20},70%,70%), hsl(${hue+40},70%,75%))`;
+}
+
+function hideWhisperProgress(finalPct) {
+  if (finalPct !== undefined) {
+    $('whisperPct').textContent = '100%';
+    $('whisperBar').style.width = '100%';
+    $('whisperBar').style.transition = 'width 0.4s ease, opacity 0.6s ease 0.3s';
+    $('whisperBar').style.opacity = '0';
+    $('whisperETA').style.display = 'none';
+    setTimeout(() => hide('whisperProgressWrap'), 1000);
+  } else {
+    hide('whisperProgressWrap');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Color Analysis (Canvas) — 仅用于帧标签与报告上下文，不再做内容类型判定 / 图表
+// ═══════════════════════════════════════════════════════════════
+async function analyzeFramesColor(imgSrcs) {
+  const results = [];
+  for (let i = 0; i < imgSrcs.length; i++) {
+    const img = new Image();
+    await new Promise(res => { img.onload = res; img.src = imgSrcs[i]; });
+    const canvas = document.createElement('canvas');
+    canvas.width = 120;
+    canvas.height = Math.round(120 * img.height / img.width);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    let rS=0, gS=0, bS=0;
+    let skinP=0, redP=0, whiteP=0, blueP=0, darkP=0, textP=0, purpleP=0;
+    const cc = {};
+    const total = data.length / 4;
+
+    for (let j = 0; j < data.length; j += 4) {
+      const r = data[j], g = data[j+1], b = data[j+2];
+      rS += r; gS += g; bS += b;
+
+      if (r > 80 && g > 55 && b > 40 && r > g && r > b && Math.abs(r-g) < 65 && r > 95) skinP++;
+      if (r > 150 && r > g * 1.3 && r > b * 1.3) redP++;
+      if (r > 215 && g > 215 && b > 215 && Math.abs(r-g) < 35) whiteP++;
+      if (b > 110 && b > r * 1.15 && b > g * 1.1) blueP++;
+      if (r > 100 && b > 120 && r < b && g < 100) purpleP++;
+      if (r < 55 && g < 55 && b < 55) darkP++;
+
+      const rng = Math.max(r,g,b) - Math.min(r,g,b);
+      if (rng > 180 && (r > 200 || g > 200 || b > 200) && (r < 60 || g < 60 || b < 60)) textP++;
+
+      const maxC = Math.max(r,g,b), minC = Math.min(r,g,b);
+      const delta = maxC - minC;
+      let name;
+      if (delta < 15) name = maxC > 200 ? '白色' : '灰色';
+      else {
+        let hDeg;
+        if (maxC === r) hDeg = 60 * ((g-b)/delta % 6);
+        else if (maxC === g) hDeg = 60 * ((b-r)/delta + 2);
+        else hDeg = 60 * ((r-g)/delta + 4);
+        hDeg = (hDeg + 360) % 360;
+        if (hDeg < 15 || hDeg >= 345) name = '红色';
+        else if (hDeg < 40) name = '橙色';
+        else if (hDeg < 75) name = '黄色';
+        else if (hDeg < 155) name = '绿色';
+        else if (hDeg < 210) name = '青色';
+        else if (hDeg < 265) name = '蓝色';
+        else if (hDeg < 295) name = '紫色';
+        else name = '粉色';
+      }
+      cc[name] = (cc[name] || 0) + 1;
+    }
+
+    const avgR = rS/total, avgG = gS/total, avgB = bS/total;
+    const brightness = (avgR*0.299 + avgG*0.587 + avgB*0.114) / 255;
+    const maxC2 = Math.max(avgR, avgG, avgB), minC2 = Math.min(avgR, avgG, avgB);
+    const satV = maxC2 === 0 ? 0 : (maxC2 - minC2) / maxC2 * 255;
+    let hueV = 0;
+    if (maxC2 === avgR) hueV = 60 * ((avgG-avgB)/((maxC2-minC2)||1) % 6);
+    else if (maxC2 === avgG) hueV = 60 * ((avgB-avgR)/(maxC2-minC2||1) + 2);
+    else hueV = 60 * ((avgR-avgG)/(maxC2-minC2||1) + 4);
+    hueV = (hueV + 360) % 360;
+
+    const topColors = Object.entries(cc).sort((a,b) => b[1]-a[1]).slice(0,5).map(e => e[0]);
+
+    let shotType = 'UNKNOWN';
+    if (skinP/total > 0.15) shotType = '人物特写';
+    else if (skinP/total > 0.05) shotType = '人物中景';
+    else if (whiteP/total > 0.3) shotType = '产品展示';
+    else if (darkP/total > 0.25) shotType = '暗光场景';
+    else if (blueP/total > 0.05) shotType = '蓝色场景';
+    else shotType = '一般场景';
+
+    results.push({
+      t: 0,
+      brightness: +brightness.toFixed(3),
+      hue: +hueV.toFixed(1),
+      sat: +satV.toFixed(1),
+      motion: 0, motionLabel: '静止',
+      brightnessLabel: brightness > 0.65 ? '明亮' : (brightness < 0.3 ? '昏暗' : '适中'),
+      skinRatio: +(skinP/total).toFixed(3),
+      rednessRatio: +(redP/total).toFixed(3),
+      whiteRatio: +(whiteP/total).toFixed(3),
+      blueRatio: +(blueP/total).toFixed(3),
+      purpleRatio: +(purpleP/total).toFixed(3),
+      darkRatio: +(darkP/total).toFixed(3),
+      textRatio: +(textP/total*100).toFixed(2),
+      hasText: textP/total > 0.008,
+      colors: topColors,
+      dominantColor: topColors[0] || '灰色',
+      avgR: +avgR.toFixed(1), avgG: +avgG.toFixed(1), avgB: +avgB.toFixed(1),
+      shotType,
+    });
+  }
+
+  results.forEach((r, i) => r.t = frameImages[i].t);
+
+  for (let i = 1; i < results.length; i++) {
+    const dB = Math.abs(results[i].brightness - results[i-1].brightness) * 2
+             + Math.abs(results[i].skinRatio - results[i-1].skinRatio);
+    const m = Math.min(1, dB * 3);
+    results[i].motion = m;
+    results[i].motionLabel = m < 0.05 ? '低' : (m < 0.2 ? '中' : '高');
+  }
+  return results;
+}
+
+function findSceneChanges(frames) {
+  const changes = [];
+  for (let i = 1; i < frames.length; i++) {
+    const dB = Math.abs(frames[i].brightness - frames[i-1].brightness);
+    const dS = Math.abs(frames[i].skinRatio - frames[i-1].skinRatio);
+    const dC = frames[i].dominantColor !== frames[i-1].dominantColor ? 1 : 0;
+    const score = (dB * 2 + dS * 0.5 + dC) * 50;
+    if (score > 8) changes.push({ t: frames[i].t, score: +score.toFixed(0) });
+  }
+  return changes;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Keywords + Script
+// ═══════════════════════════════════════════════════════════════
+function extractKeywords(text) {
+  if (!text) return { highFreq: [], actions: [], emotions: [], products: [] };
+  const ACTION_WORDS = new Set(['推荐','介绍','讲解','分享','展示','演示','告诉','帮助','发现','觉得','看到','注意','开始','使用','体验','感受','操作','完成','点击','打开','购买','告诉您','告诉你们','怎么','如何','为什么','因为','所以','这样','那样']);
+  const EMOTION_WORDS = new Set(['非常','特别','真的','简直','太','好','很','超','极','十分','喜欢','爱','赞','棒','厉害','牛','优秀','完美','漂亮','好看','开心','快乐','激动','兴奋','惊喜','满意','放心','绝绝子','太棒','超级','非常']);
+  const STOP = new Set(['的是','这个','那个','就是','可以','没有','什么','怎么','一个','如果','因为','所以','而且','但是','或者','以及','还有','对于','关于','通过','进行']);
+
+  const freq = {};
+  const words = text.match(/[\u4e00-\u9fa5]{2,}/g) || [];
+  words.forEach(w => freq[w] = (freq[w]||0) + 1);
+  const sorted = Object.entries(freq).sort((a,b) => b[1]-a[1]);
+
+  const highFreq = sorted.filter(([w]) => w.length>=2 && !STOP.has(w) && freq[w]>=2).slice(0,20).map(e=>e[0]);
+  const actions = sorted.filter(([w]) => ACTION_WORDS.has(w)).slice(0,10).map(e=>e[0]);
+  const emotions = sorted.filter(([w]) => EMOTION_WORDS.has(w) || [...EMOTION_WORDS].some(e=>w.includes(e))).slice(0,10).map(e=>e[0]);
+  const products = sorted.filter(([w]) => w.length>=3 && freq[w]>=1 && !STOP.has(w)).slice(0,15).map(e=>e[0]);
+
+  return { highFreq, actions, emotions, products };
+}
+
+function generateScript(speechResult) {
+  if (!speechResult?.segments?.length) return null;
+  return speechResult.segments.map(s => `【${s.start.toFixed(0)}s】${s.text}`).join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Main Pipeline
+// ═══════════════════════════════════════════════════════════════
+async function processFile(file) {
+  if (!file.type.startsWith('video/')) { toast('请上传视频文件', 'error'); return; }
+  if (file.size > 600*1024*1024) { toast('文件过大（>600MB）', 'error'); return; }
+
+  // Reset state
+  speechResult = null;
+  analysisResult = null;
+  deepReportCache = null;
+  transcribeJobId = null;
+  clearInterval(transcribePollTimer);
+
+  show('spinner');
+  $('spinnerText').textContent = '读取视频...';
+  $('spinnerSub').textContent = '准备中';
+  $('spinnerFill').style.width = '5%';
+
+  setBadge('badgeColor','running','分析中');
+  setBadge('badgeSpeech','wait','等待');
+  setBadge('badgeCopy','wait','等待');
+
+  ['stepUpload','stepExtract','stepWhisper','stepDone'].forEach((id,i) => setStep(id,'wait'));
+
+  try {
+    // ── 1. 加载视频 ──
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = false;
+    video.src = URL.createObjectURL(file);
+    await new Promise((res,rej) => { video.onloadedmetadata = res; video.onerror = rej; });
+
+    $('videoPreview').style.display = 'block';
+    $('videoPreview').src = video.src;
+    $('previewMeta').innerHTML =
+      `分辨率: ${video.videoWidth}x${video.videoHeight} &nbsp;|&nbsp; 时长: ${video.duration.toFixed(1)}s<br>` +
+      `文件大小: ${(file.size/1024/1024).toFixed(2)} MB &nbsp;|&nbsp; 类型: ${file.type}`;
+    document.body.classList.add('video-active');
+    $('mainLayout').style.display = 'flex';
+    document.querySelectorAll('.upload-zone').forEach(z => z.style.display = 'none');
+
+    const duration = video.duration;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const fps = 30;
+    const totalFrames = Math.floor(duration * fps);
+
+    $('spinnerFill').style.width = '10%';
+    $('spinnerSub').textContent = '提取关键帧...';
+
+    // ── 2. 提取帧 ──
+    const numFrames = Math.min(15, Math.max(6, Math.floor(duration / 3)));
+    frameImages = [];
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = vw; tmpCanvas.height = vh;
+    const tCtx = tmpCanvas.getContext('2d');
+
+    for (let i = 0; i < numFrames; i++) {
+      const t = (i / numFrames) * duration * 0.97 + duration * 0.015;
+      await new Promise(resolve => {
+        video.currentTime = Math.min(t, duration - 0.01);
+        video.onseeked = () => {
+          tCtx.drawImage(video, 0, 0);
+          tmpCanvas.toBlob(blob => {
+            if (blob) frameImages.push({ blob, img: URL.createObjectURL(blob), t: +(video.currentTime).toFixed(1) });
+            resolve();
+          }, 'image/jpeg', 0.82);
+        };
+      });
+      $('spinnerFill').style.width = (10 + 20 * (i/numFrames)) + '%';
+      $('spinnerSub').textContent = `提取帧 ${i+1}/${numFrames}...`;
+    }
+
+    frameImages.sort((a,b) => a.t - b.t);
+    frameImages = frameImages.reduce((acc, f) => {
+      if (!acc.find(a => Math.abs(a.t-f.t) < 0.3)) acc.push(f);
+      return acc;
+    }, []);
+
+    // ── 3. 色彩分析（仅用于帧标签 / 报告上下文，不再做内容类型判定）──
+    $('spinnerSub').textContent = '分析画面色彩...';
+    $('spinnerFill').style.width = '35%';
+    const frames = await analyzeFramesColor(frameImages.map(f => f.img));
+    $('spinnerFill').style.width = '45%';
+
+    const sceneChanges = findSceneChanges(frames);
+
+    analysisResult = {
+      name: file.name, duration, fps, width: vw, height: vh,
+      totalFrames, fileSize: (file.size/1024/1024).toFixed(2),
+      frames, sceneChanges,
+    };
+
+    setBadge('badgeColor','ok', frames.length+'帧');
+    $('spinnerFill').style.width = '50%';
+    $('spinnerSub').textContent = '画面分析完成 ✓';
+
+    // ── 4. 渲染画面分析结果 ──
+    renderMetrics(analysisResult);
+    renderFrames(analysisResult);
+
+    show('featureBadges');
+    show('metricsSection');
+    show('tabsSection');
+    hide('spinner');
+
+    // ── 5. 启动语音转写（后台）──
+    $('spinnerSub').textContent = '启动语音转写...';
+    setBadge('badgeSpeech','running','启动中');
+    setStep('stepUpload','running');
+    hideWhisperProgress();
+
+    const jobId = await startTranscription(file, duration);
+    if (jobId) {
+      transcribeJobId = jobId;
+      setStep('stepUpload','done','完成');
+      setBadge('badgeSpeech','running','转写中');
+      updateWhisperProgress(40, null);
+
+      transcribePollTimer = setInterval(() => pollTranscribeResult(jobId), 2000);
+      pollTranscribeResult(jobId);
+    } else {
+      setBadge('badgeSpeech','fail','服务未启动');
+      setStep('stepUpload','fail');
+      $('speechTimeline').innerHTML = `<div style="color:var(--yellow);font-size:0.8rem;padding:1rem 0;">
+        &#9888; 转写服务未启动。请先运行以下命令启动服务：<br>
+        <code style="background:#232636;padding:0.3rem 0.6rem;border-radius:6px;display:inline-block;margin-top:0.5rem;font-size:0.75rem;">
+          python transcribe_server.py --port 8766
+        </code>
+      </div>`;
+    }
+
+    toast(`分析完成！帧: ${frames.length}`);
+
+  } catch(err) {
+    console.error(err);
+    hide('spinner');
+    toast('分析失败: ' + err.message, 'error');
+  }
+}
+
+function renderMetrics(r) {
+  $('mDuration').textContent = r.duration.toFixed(1)+'s';
+  $('mOrientation').textContent = r.height>r.width?'竖屏 9:16':'横屏 16:9';
+  $('mResolution').textContent = r.width+'x'+r.height;
+  $('mFps').textContent = r.fps;
+  $('mFrames').textContent = r.totalFrames.toLocaleString();
+  $('mSize').textContent = r.fileSize;
+  $('mAudio').textContent = '?';
+  $('mAudioSub').textContent = speechResult ? '已识别' : '检测中';
+}
+
+function renderSpeech(speech) {
+  $('speechTabCount').textContent = speech?.segments?.length ? `(${speech.segments.length}段，${speech.text?.length||0}字)` : '';
+  $('mAudioSub').textContent = '已识别';
+
+  if (speech?.segments?.length) {
+    $('speechTimeline').innerHTML = speech.segments.map(s => {
+      const kw = speech.keywords;
+      let text = s.text;
+      if (kw?.highFreq) {
+        kw.highFreq.forEach(word => {
+          if (word.length >= 2) text = text.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'g'), `<span class="kw">${word}</span>`);
+        });
+      }
+      if (kw?.actions) {
+        kw.actions.forEach(word => {
+          if (word.length >= 2) text = text.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'g'), `<span class="aw">${word}</span>`);
+        });
+      }
+      return `<div class="speech-segment">
+        <span class="speech-time">@${s.start.toFixed(0)}s</span>
+        <span class="speech-text">${text}</span>
+      </div>`;
+    }).join('');
+
+    if (speech.keywords) {
+      $('kwFreq').innerHTML = speech.keywords.highFreq.slice(0,12).map(k => `<span class="copy-tag">${k}</span>`).join('');
+      $('kwAction').innerHTML = speech.keywords.actions.slice(0,8).map(k => `<span class="copy-tag yellow">${k}</span>`).join('');
+      $('kwEmotion').innerHTML = speech.keywords.emotions.slice(0,8).map(k => `<span class="copy-tag purple">${k}</span>`).join('');
+      $('kwProduct').innerHTML = speech.keywords.products.slice(0,12).map(k => `<span class="copy-tag green">${k}</span>`).join('');
+    }
+  } else if (speech?.text) {
+    $('speechTimeline').innerHTML = `<div class="speech-segment"><span class="speech-text">${speech.text}</span></div>`;
+  } else if (speech?.no_audio) {
+    $('speechTimeline').innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:1.2rem 0;">🎧 该视频无音轨（纯画面视频），无法转写语音。<br><span style="font-size:0.76rem;color:#999;">上传含声音的手机视频即可体验语音转写功能。</span></div>`;
+    $('mAudioSub').textContent = '无音轨';
+  } else {
+    $('speechTimeline').innerHTML = `<div style="color:var(--muted);font-size:0.8rem;padding:1rem 0;">无语音内容</div>`;
+  }
+
+  const script = generateScript(speech);
+  if (script) {
+    $('generatedScript').textContent = script;
+    setBadge('badgeCopy','ok','完成');
+  } else {
+    $('generatedScript').textContent = '（无语音内容，无法生成文案脚本）';
+    setBadge('badgeCopy','ok','无语音');
+  }
+}
+
+function renderFrames(r) {
+  $('frameCount').textContent = '('+r.frames.length+'帧)';
+  const landscape = r.width > r.height;
+  $('frameGrid').innerHTML = r.frames.map((f,i) =>
+    `<div class="frame-card">
+      <img src="${frameImages[i]?.img||''}" class="frame-img ${landscape?'landscape':''}" alt="frame">
+      <div class="frame-body">
+        <div class="frame-time">@${f.t}s</div>
+        <div class="frame-tags">
+          <span class="tag">${f.brightnessLabel}</span>
+          <span class="tag">${f.motionLabel}动</span>
+          ${f.hasText?'<span class="tag yellow">有文字</span>':''}
+          ${f.skinRatio>0.1?'<span class="tag green">人物</span>':''}
+          ${f.blueRatio>0.04?'<span class="tag blue">设备/蓝</span>':''}
+          ${f.whiteRatio>0.25?'<span class="tag purple">白底</span>':''}
+          ${f.rednessRatio>0.05?'<span class="tag red">红/暖</span>':''}
+          ${f.darkRatio>0.25?'<span class="tag">暗光</span>':''}
+          ${f.sat>100?'<span class="tag orange">高饱和</span>':''}
+        </div>
+        <div style="margin-top:0.3rem;font-size:0.65rem;color:var(--muted);">${f.shotType}</div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function renderReportFinal() { renderReport(analysisResult, speechResult); }
+
+function renderReport(r, speech) {
+  const now = new Date().toLocaleString('zh-CN');
+  const avgB = (r.frames.reduce((s,f)=>s+f.brightness,0)/r.frames.length).toFixed(3);
+  const avgM = (r.frames.reduce((s,f)=>s+f.motion,0)/r.frames.length).toFixed(3);
+  const frameLines = r.frames.map(f => `| @${f.t}s | ${f.colors.slice(0,3).join(',')} | ${f.brightness.toFixed(2)} | ${f.motionLabel} | ${f.textRatio}% |`).join('\n');
+  const speechLines = speech?.segments?.map(s => `| @${s.start.toFixed(1)}s | ${s.text} |`).join('\n') || '';
+  const script = generateScript(speech);
+
+  const md = `# 视频内容分析报告
+
+**文件**: ${r.name}
+**分析时间**: ${now}
+**分析帧数**: ${r.frames.length} 帧
+
+---
+
+## 一、基本信息
+
+| 属性 | 数值 |
+|------|------|
+| 时长 | ${r.duration.toFixed(1)} 秒 |
+| 分辨率 | ${r.width} x ${r.height} |
+| 方向 | ${r.height>r.width?'竖屏 9:16':'横屏 16:9'} |
+| 帧率 | ${r.fps} fps |
+| 总帧数 | ${r.totalFrames.toLocaleString()} |
+| 文件大小 | ${r.fileSize} MB |
+
+---
+
+## 二、核心指标
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 平均亮度 | ${avgB} | ${+avgB>0.65?'明亮':(+avgB<0.3?'昏暗':'适中')} |
+| 平均运动 | ${avgM} | ${+avgM<0.05?'静止':(+avgM<0.2?'平稳':'运动频繁')} |
+| 场景切换 | ${r.sceneChanges.length} 处 | ${r.sceneChanges.length>0?'有剪辑点':'画面连续'} |
+
+---
+
+## 三、语音识别
+
+${speech?.fullText || speech?.text ? `**转写文字（共${(speech.fullText||speech.text).length}字）**:
+
+| 时间 | 内容 |
+|------|------|
+${speechLines}
+
+**关键词**: ${speech.keywords?.highFreq?.slice(0,15)?.join(' / ')||'无'}
+**动作词**: ${speech.keywords?.actions?.join(' / ')||'无'}
+**情绪词**: ${speech.keywords?.emotions?.join(' / ')||'无'}` : '未检测到语音内容'}
+
+---
+
+## 四、帧分析数据
+
+| 时间 | 主色调 | 亮度 | 运动 | 文字% |
+|------|--------|------|------|-------|
+${frameLines}
+
+---
+
+## 五、视频文案脚本
+
+${script || '(无语音内容)'}
+
+---
+
+*由 Video Content Analyzer 自动生成*
+`;
+  $('reportMd').value = md;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Transcribe API
+// ═══════════════════════════════════════════════════════════════
+async function startTranscription(file, duration) {
+  const formData = new FormData();
+  formData.append('video', file);
+  formData.append('duration', String(duration));
+
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/transcribe', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    return data.job_id;
+  } catch(e) {
+    console.error('Transcribe start failed:', e);
+    return null;
+  }
+}
+
+async function pollTranscribeResult(jobId) {
+  try {
+    const statusResp = await fetch(`${TRANSCRIBE_BASE}/api/status/${jobId}`);
+    const statusData = await statusResp.json();
+
+    setStep('stepUpload', 'done', '完成');
+    if (statusData.status === 'extracting' || statusData.status === 'starting') {
+      setStep('stepExtract', 'running');
+      setStep('stepWhisper', 'wait');
+      setStep('stepDone', 'wait');
+    } else if (statusData.status === 'transcribing') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'running');
+      setStep('stepDone', 'wait');
+      updateWhisperProgress(statusData.progress || 40, statusData.estimated_remaining);
+    } else if (statusData.status === 'analyzing') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'done', '完成');
+      setStep('stepDone', 'running');
+    } else if (statusData.status === 'done') {
+      setStep('stepExtract', 'done', '完成');
+      setStep('stepWhisper', 'done', '完成');
+      setStep('stepDone', 'done', '完成');
+      clearInterval(transcribePollTimer);
+      const resultResp = await fetch(`${TRANSCRIBE_BASE}/api/result/${jobId}`);
+      const resultData = await resultResp.json();
+      if (resultData.result) {
+        speechResult = resultData.result;
+        setBadge('badgeSpeech', 'ok', (speechResult.segments?.length || 0) + '段');
+        hideWhisperProgress(100);
+        renderSpeech(speechResult);
+        renderReportFinal();
+        toast('语音转写完成！识别 ' + (speechResult.segments?.length || 0) + ' 段');
+      }
+      return;
+    } else if (statusData.status === 'error') {
+      setBadge('badgeSpeech', 'fail', '失败');
+      setStep('stepWhisper', 'fail');
+      clearInterval(transcribePollTimer);
+      hideWhisperProgress();
+      $('speechTimeline').innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:1rem 0;">转写失败: ${statusData.error || '未知错误'}（可能是静音视频或音频格式不支持）</div>`;
+      return;
+    } else if (statusData.status === 'no_audio') {
+      setBadge('badgeSpeech', 'fail', '无音频');
+      setStep('stepExtract', 'fail');
+      clearInterval(transcribePollTimer);
+      hideWhisperProgress();
+      $('speechTimeline').innerHTML = `<div style="color:var(--yellow);font-size:0.8rem;padding:1rem 0;">未检测到音频轨道（该视频可能为静音视频）</div>`;
+      return;
+    }
+  } catch(e) {
+    console.error('Poll error:', e);
+  }
+}
+
+function downloadReport() {
+  if (!$('reportMd')?.value) return;
+  const blob = new Blob([$('reportMd').value], {type:'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'video_analysis_' + new Date().toISOString().slice(0,10) + '.md';
+  a.click();
+  toast('报告已下载');
+}
+
+async function downloadFrames() {
+  if (!frameImages.length) return;
+  for (const f of frameImages) {
+    const a = document.createElement('a');
+    a.href = f.img;
+    a.download = 'frame_' + f.t.toString().padStart(4,'0') + 's.jpg';
+    a.click();
+    await new Promise(r => setTimeout(r, 80));
+  }
+  toast('已下载 ' + frameImages.length + ' 张帧图片');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 深度分析（九节结构）— Bug #3 部署 + Bug #11 超时/取消
+// ═══════════════════════════════════════════════════════════════
+function deepGoStep1() {
+  _deepApiVerified = false;
+  _deepModel = '';
+  $('deepStep1').style.display = 'block';
+  $('deepStep2').style.display = 'none';
+  $('deepReportLoading').style.display = 'none';
+  $('deepReportContent').style.display = 'none';
+  $('deepReportError').style.display = 'none';
+  $('deepKeyError').style.display = 'none';
+  $('deepReportStatus').textContent = '';
+}
+
+async function testApiKey() {
+  const key = ($('deepApiKey').value || '').trim();
+  if (!key) { showKeyError('API Key 不能为空'); return; }
+  $('deepKeyError').style.display = 'none';
+  $('btnTestKey').disabled = true;
+  $('btnTestKey').textContent = '验证中...';
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + '/api/test-api-key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({api_key: key}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      _deepApiVerified = true;
+      const sel = $('deepModel');
+      sel.innerHTML = '';
+      (data.available_models || []).forEach(function(m) {
+        const opt = document.createElement('option');
+        opt.value = m[0]; opt.textContent = m[1];
+        if (m[0] === data.model) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      _deepModel = data.model || (data.available_models && data.available_models[0] && data.available_models[0][0]) || '';
+      $('deepModelTip').textContent = '服务商：' + (data.provider || '') + '  ·  当前模型：' + _deepModel;
+      $('deepStep1').style.display = 'none';
+      $('deepStep2').style.display = 'block';
+    } else {
+      _deepApiVerified = false;
+      showKeyError(data.error || '验证失败，请检查 Key 是否正确');
+    }
+  } catch(e) {
+    _deepApiVerified = false;
+    showKeyError('网络请求失败：' + e.message);
+  } finally {
+    $('btnTestKey').disabled = false;
+    $('btnTestKey').textContent = '✓ 验证 Key';
+  }
+}
+
+function showKeyError(msg) {
+  $('deepKeyError').innerHTML = '&#9888; ' + msg;
+  $('deepKeyError').style.display = 'block';
+}
+
+function setDeepProgress(pct, label) {
+  $('deepReportProgress').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (label) $('deepReportProgressLabel').textContent = label;
+}
+
+function showDeepError(msg) {
+  $('deepReportError').innerHTML = msg;
+  $('deepReportError').style.display = 'block';
+  $('deepReportLoading').style.display = 'none';
+}
+
+function cancelDeepAnalysis() {
+  if (deepAbortController) {
+    try { deepAbortController.abort(); } catch(e) {}
+  }
+  if (deepTimeoutId) { clearTimeout(deepTimeoutId); deepTimeoutId = null; }
+  deepAbortController = null;
+  $('deepReportLoading').style.display = 'none';
+  $('deepReportError').style.display = 'block';
+  $('deepReportError').innerHTML = '&#10005; 分析已取消。' +
+    '<br><button class="btn btn-secondary" onclick="deepGoStep1()" style="margin-top:0.5rem;">&#8592; 重新分析</button>';
+  $('deepReportStatus').textContent = '已取消';
+}
+
+function doDeepAnalysis() {
+  if (!analysisResult || !speechResult) {
+    showDeepError('请先上传视频并完成转写后再进行分析。');
+    return;
+  }
+  const text = speechResult.text || speechResult.fullText || '';
+  if (!text || text.length < 10) {
+    showDeepError('转写文字过短，无法进行深度分析。请确认视频有语音内容。');
+    return;
+  }
+  if (!_deepApiVerified) {
+    showDeepError('请先点击「验证 Key」完成 API Key 校验。');
+    return;
+  }
+
+  $('deepStep2').style.display = 'none';
+  $('deepReportLoading').style.display = 'block';
+  $('deepReportContent').style.display = 'none';
+  $('deepReportError').style.display = 'none';
+  $('deepReportStatus').textContent = '分析中...';
+  setDeepProgress(5, '正在发送分析请求...');
+
+  const apiKey = ($('deepApiKey').value || '').trim();
+  const model  = ($('deepModel').value || _deepModel || '').trim();
+  const payload = {
+    transcription: {
+      text: text,
+      language: speechResult.language || 'zh',
+      segments: speechResult.segments || [],
+      keywords: speechResult.keywords || {}
+    },
+    analysis: analysisResult,
+    video_meta: { width: analysisResult.width, height: analysisResult.height, fps: analysisResult.fps },
+    api_key: apiKey,
+    model: model,
+  };
+
+  // Bug #11: AbortController + 5 分钟超时 + 可取消
+  deepAbortController = new AbortController();
+  deepTimeoutId = setTimeout(() => {
+    if (deepAbortController) deepAbortController.abort();
+  }, 300000);
+
+  fetch(TRANSCRIBE_BASE + '/api/analyze-copy', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+    signal: deepAbortController.signal,
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.has_llm || data.error) {
+      const errMsg = data.error || 'API 调用失败';
+      showDeepError(errMsg + '<br><br><button class="btn btn-secondary" onclick="deepGoStep1()" style="margin-top:0.5rem;">&#8592; 重新填写 Key</button>');
+      return;
+    }
+    deepReportCache = data.report;
+    renderDeepReport(data.report);
+    $('deepReportLoading').style.display = 'none';
+    $('deepReportContent').style.display = 'block';
+    $('deepReportStatus').textContent = '✓ 分析完成 · ' + (data.model || model);
+    setDeepProgress(100, '分析完成！');
+  })
+  .catch(err => {
+    if (err && err.name === 'AbortError') return; // 取消已由 cancelDeepAnalysis 处理 UI
+    showDeepError('网络请求失败：' + err.message + '<br><br><button class="btn btn-secondary" onclick="deepGoStep1()" style="margin-top:0.5rem;">&#8592; 重新填写 Key</button>');
+    $('deepReportLoading').style.display = 'none';
+  })
+  .finally(() => {
+    if (deepTimeoutId) { clearTimeout(deepTimeoutId); deepTimeoutId = null; }
+    deepAbortController = null;
+  });
+}
+
+function renderDeepReport(md) {
+  if (typeof md !== 'string') md = String(md || '');
+  const lines = md.split(/\r?\n/);
+  let html = '';
+  let inList = false;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  const inline = s => s
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code style="background:#232636;padding:0.1rem 0.3rem;border-radius:4px;">$1</code>');
+  for (let raw of lines) {
+    const line = raw.trimEnd();
+    if (/^###\s+/.test(line)) { closeList(); html += `<h3 style="font-size:0.85rem;margin:0.9rem 0 0.4rem;color:#a78bfa;">${inline(line.replace(/^###\s+/,''))}</h3>`; }
+    else if (/^##\s+/.test(line)) { closeList(); html += `<h2 style="font-size:0.95rem;margin:1.1rem 0 0.5rem;color:#818cf8;border-bottom:1px solid #2a2d3a;padding-bottom:0.3rem;">${inline(line.replace(/^##\s+/,''))}</h2>`; }
+    else if (/^#\s+/.test(line)) { closeList(); html += `<h1 style="font-size:1.05rem;margin:0.5rem 0 0.6rem;color:#e2e8f0;">${inline(line.replace(/^#\s+/,''))}</h1>`; }
+    else if (/^[-*]\s+/.test(line)) { if (!inList) { html += '<ul style="margin:0.3rem 0 0.6rem;padding-left:1.2rem;">'; inList = true; } html += `<li style="font-size:0.8rem;line-height:1.7;margin-bottom:0.2rem;">${inline(line.replace(/^[-*]\s+/,''))}</li>`; }
+    else if (line === '') { closeList(); }
+    else { closeList(); html += `<p style="font-size:0.8rem;line-height:1.8;margin:0.3rem 0;color:#cbd5e1;">${inline(line)}</p>`; }
+  }
+  closeList();
+  $('deepReportContent').innerHTML = html;
+}
+
+// ── Init ──
+$('fileInput').addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+const dz = $('uploadContainer');
+dz?.addEventListener('dragover', e => { e.preventDefault(); });
+dz?.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+deepGoStep1();
+
+console.log('[v3] loaded');
+</script>
+</body>
+</html>

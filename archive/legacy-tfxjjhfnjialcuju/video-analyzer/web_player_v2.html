@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Analyzer v2 - 修复版</title>
+<style>
+* { box-sizing: border-box; margin:0; padding:0; }
+body { font-family: 'Microsoft YaHei', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+body.has-video { display: flex; }
+#leftPanel { display:none; width: 360px; padding:1rem; background:#1a1d27; flex-shrink:0; }
+body.has-video #leftPanel { display:block; }
+#leftPanel video { width:100%; border-radius:10px; background:#000; }
+#rightPanel { flex:1; padding:2rem; }
+.header { background:#1a1d27; padding:1rem 2rem; border-bottom:1px solid #2a2d3a; font-size:1.1rem; font-weight:600; }
+.upload-zone { border:2px dashed #6366f1; border-radius:12px; padding:3rem; text-align:center; cursor:pointer; margin:2rem 0; }
+.upload-zone:hover { background:#1a1d27; }
+.badge { display:inline-block; padding:0.2rem 0.6rem; border-radius:12px; font-size:0.72rem; margin-left:0.5rem; }
+.badge.running { background:#6366f1; }
+.badge.done { background:#6ee7b7; color:#000; }
+.badge.error { background:#f87171; }
+.badge.wait { background:#2a2d3a; }
+#toast { position:fixed; top:1rem; right:1rem; padding:0.8rem 1.2rem; border-radius:8px; display:none; z-index:999; }
+#toast.success { background:#6ee7b7; color:#000; }
+#toast.error { background:#f87171; }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div class="header">
+  🎬 Video Content Analyzer <span class="badge wait" id="badgeSpeech">语音: 等待</span>
+</div>
+
+<!-- Left: Video Preview -->
+<div id="leftPanel">
+  <video id="videoPreview" controls></video>
+  <div id="previewMeta" style="font-size:0.72rem; color:#6b7084; margin-top:0.5rem; line-height:1.8;"></div>
+  <div style="margin-top:1rem;">
+    <div style="font-weight:600; margin-bottom:0.5rem;">📝 转写结果</div>
+    <div id="speechText" style="font-size:0.82rem; line-height:1.8; max-height:300px; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- Right: Upload + Analysis -->
+<div id="rightPanel">
+  <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+    <div style="font-size:2rem; margin-bottom:0.5rem;">📁</div>
+    <div>点击上传视频文件</div>
+    <div style="font-size:0.75rem; color:#6b7084; margin-top:0.5rem;">支持 MP4 / MOV / AVI，最大 600MB</div>
+  </div>
+  <input type="file" id="fileInput" accept="video/*" style="display:none" onchange="handleFile(this.files[0])">
+
+  <div id="progressArea" style="display:none; margin-top:1rem;">
+    <div style="font-weight:600; margin-bottom:0.5rem;">分析进度</div>
+    <div id="progressText" style="font-size:0.82rem; color:#6b7084;"></div>
+    <div style="background:#2a2d3a; height:6px; border-radius:3px; margin-top:0.5rem; overflow:hidden;">
+      <div id="progressBar" style="background:#6366f1; height:100%; width:0%; transition:width 0.3s;"></div>
+    </div>
+  </div>
+
+  <div id="resultArea" style="display:none; margin-top:2rem;">
+    <div style="font-weight:600; margin-bottom:1rem;">分析结果</div>
+    <div id="resultContent"></div>
+  </div>
+</div>
+
+<script>
+// ── Utilities ──
+function $(id) { return document.getElementById(id); }
+function toast(msg, type='success') {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = type;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// ── Global State ──
+let currentVideoURL = null;
+let transcribeJobId = null;
+let transcribePollTimer = null;
+
+// ── File Upload Handler ──
+async function handleFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith('video/')) { toast('请上传视频文件', 'error'); return; }
+  if (file.size > 600*1024*1024) { toast('文件过大（>600MB）', 'error'); return; }
+
+  console.log('[Main] 文件选中:', file.name, (file.size/1024/1024).toFixed(2)+'MB');
+
+  // ── Step 1: 显示视频预览 ──
+  if (currentVideoURL) URL.revokeObjectURL(currentVideoURL);
+  currentVideoURL = URL.createObjectURL(file);
+  
+  const video = $('videoPreview');
+  video.src = currentVideoURL;
+  video.onloadedmetadata = () => {
+    console.log('[Main] 视频元数据加载完成:', video.videoWidth, 'x', video.videoHeight);
+    $('previewMeta').innerHTML =
+      `分辨率: ${video.videoWidth}x${video.videoHeight} &nbsp;|&nbsp; ` +
+      `时长: ${video.duration.toFixed(1)}s &nbsp;|&nbsp; ` +
+      `大小: ${(file.size/1024/1024).toFixed(2)}MB`;
+    document.body.classList.add('has-video');
+    video.load();  // 强制加载
+  };
+  video.onerror = (e) => {
+    console.error('[Main] 视频加载失败:', e);
+    toast('视频加载失败', 'error');
+  };
+
+  // 显示进度区域
+  $('progressArea').style.display = 'block';
+  $('progressText').textContent = '准备上传...';
+  $('progressBar').style.width = '5%';
+
+  // ── Step 2: 上传到转写服务 ──
+  await startTranscription(file);
+}
+
+// ── Transcription ──
+async function startTranscription(file) {
+  const formData = new FormData();
+  formData.append('video', file);
+  
+  // 获取视频时长
+  const tmpVideo = document.createElement('video');
+  tmpVideo.preload = 'metadata';
+  tmpVideo.src = URL.createObjectURL(file);
+  await new Promise(res => tmpVideo.onloadedmetadata = res);
+  const duration = Math.round(tmpVideo.duration);
+  formData.append('duration', duration.toString());
+  URL.revokeObjectURL(tmpVideo.src);
+
+  console.log('[Transcribe] 开始上传, duration=', duration);
+  $('progressText').textContent = '上传到转写服务...';
+  $('progressBar').style.width = '10%';
+
+  try {
+    const resp = await fetch('http://127.0.0.1:8766/api/transcribe', {
+      method: 'POST',
+      body: formData,
+    });
+    const job = await resp.json();
+    console.log('[Transcribe] 任务创建:', job);
+    transcribeJobId = job.job_id;
+    pollTranscription(job.job_id);
+  } catch(e) {
+    console.error('[Transcribe] 上传失败:', e);
+    toast('转写服务连接失败，请检查 :8766 服务是否启动', 'error');
+  }
+}
+
+function pollTranscription(jobId) {
+  if (transcribePollTimer) clearInterval(transcribePollTimer);
+  console.log('[Transcribe] 开始轮询:', jobId);
+  
+  transcribePollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`http://127.0.0.1:8766/api/status/${jobId}`);
+      const s = await r.json();
+      console.log('[Transcribe] 状态:', s.status, s.progress+'%', s.current_chunk||'');
+      
+      // 更新进度
+      $('progressBar').style.width = s.progress + '%';
+      if (s.status === 'extracting') {
+        $('progressText').textContent = '提取音频中...';
+      } else if (s.status === 'transcribing') {
+        $('progressText').textContent = '语音转写中... ' + (s.current_chunk||'');
+      }
+
+      if (s.status === 'done' || s.status === 'error' || s.status === 'no_audio') {
+        clearInterval(transcribePollTimer);
+        transcribePollTimer = null;
+        await getTranscriptionResult(jobId);
+      }
+    } catch(e) {
+      console.error('[Transcribe] 轮询错误:', e);
+    }
+  }, 800);
+}
+
+async function getTranscriptionResult(jobId) {
+  console.log('[Transcribe] 获取结果:', jobId);
+  $('progressText').textContent = '获取转写结果...';
+  
+  try {
+    const r = await fetch(`http://127.0.0.1:8766/api/result/${jobId}`);
+    const res = await r.json();
+    console.log('[Transcribe] 结果:', res);
+
+    if (res.status === 'done' && res.result) {
+      const result = res.result;
+      $('progressText').textContent = '转写完成！';
+      $('progressBar').style.width = '100%';
+      
+      // 显示转写文本
+      if (result.text) {
+        $('speechText').innerHTML = result.text.split('。').map(s => s.trim() ? s+'.' : '').join('<br>');
+        toast('语音转写完成！', 'success');
+      } else if (result.no_audio) {
+        $('speechText').innerHTML = '<span style="color:#6b7084;">（该视频无音轨）</span>';
+        toast('该视频无音轨', 'error');
+      }
+
+      // 显示关键词
+      if (result.keywords) {
+        console.log('[Transcribe] 关键词:', result.keywords);
+      }
+    } else {
+      $('speechText').innerHTML = '<span style="color:#f87171;">转写失败: ' + (res.error||'未知错误') + '</span>';
+      toast('转写失败', 'error');
+    }
+  } catch(e) {
+    console.error('[Transcribe] 获取结果失败:', e);
+    toast('获取转写结果失败', 'error');
+  }
+}
+
+console.log('[Main] Video Analyzer v2 加载完成');
+</script>
+</body>
+</html>

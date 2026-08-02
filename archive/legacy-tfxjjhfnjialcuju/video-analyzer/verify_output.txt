@@ -1,0 +1,13 @@
+[OK] Button found
+Context (ascii): ndary" style="margin-top:1rem;width:100%;" onclick="document.getElementById('fileInput').click()">? ?????</button>
+</div>
+<div id="rightPanel">
+<div id="featureBadges" class="badges-row hidden">
+<div class="badge wait" id="badgeColor"><span>&#127912;
+[OK] rightPanel found
+Context: 
+</div>
+<button class="btn btn-secondary" style="margin-top:1rem;width:100%;" onclick="document.getElementById('fileInput').click()">? ?????</button>
+</div>
+<div id="rightPanel">
+<div id="featureBadge

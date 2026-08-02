@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>视频预览测试</title>
+<style>
+body { font-family: sans-serif; padding: 2rem; background: #1a1d27; color: #e2e8f0; }
+#preview { margin-top: 1rem; }
+video { max-height: 300px; border-radius: 10px; }
+</style>
+</head>
+<body>
+<h2>上传视频测试预览</h2>
+<input type="file" id="fileInput" accept="video/*" onchange="loadVideo(this.files[0])">
+<div id="preview"></div>
+<script>
+function loadVideo(file) {
+  if (!file) return;
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  video.src = URL.createObjectURL(file);
+  video.onloadedmetadata = () => {
+    video.controls = true;
+    video.style.display = 'block';
+    document.getElementById('preview').innerHTML = '';
+    document.getElementById('preview').appendChild(video);
+    const info = document.createElement('div');
+    info.innerHTML = `分辨率: ${video.videoWidth}x${video.videoHeight} | 时长: ${video.duration.toFixed(1)}s | 大小: ${(file.size/1024/1024).toFixed(2)}MB`;
+    document.getElementById('preview').appendChild(info);
+    URL.revokeObjectURL(video.src);
+  };
+  video.onerror = () => alert('无法加载视频');
+}
+</script>
+</body>
+</html>

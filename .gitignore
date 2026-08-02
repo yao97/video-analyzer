@@ -1,0 +1,41 @@
+# ── 环境与密钥 ──
+.env
+.env.local
+.env.*.local
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── 数据与导出 ──
+exports/
+*.mp4
+*.wav
+*.log
+
+# ── 临时调试脚本（开发期产物，不入库） ──
+_*.py
+_*.js
+_*.html
+
+# ── 备份文件 ──
+*.bak
+*.qbak
+*~
+
+# ── IDE / 系统 ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Whisper 模型 ──
+*.pt
+*.bin
+
+# ── Docker 本地覆盖 ──
+docker-compose.override.yml

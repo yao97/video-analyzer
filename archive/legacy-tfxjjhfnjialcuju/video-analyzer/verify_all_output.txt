@@ -1,0 +1,5 @@
+[OK] Tab button added
+[OK] Tab panel added
+[OK] renderShooting function added
+[OK] renderShooting call added
+[OK] Whisper model set to small

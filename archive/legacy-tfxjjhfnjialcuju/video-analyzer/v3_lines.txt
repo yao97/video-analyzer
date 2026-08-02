@@ -1,0 +1,111 @@
+L610:     setBadge('badgeColor','ok', frames.length+'帧');
+L611:     setBadge('badgeContent','ok', fullContentType.label);
+L612:     $('spinnerFill').style.width = '50%';
+L613:     $('spinnerSub').textContent = '画面分析完成 ✓';
+L614: 
+L615:     // ── 5. 渲染画面分析结果（立即显示）──
+L616:     renderMetrics(analysisResult);
+L617:     renderOverview(analysisResult);
+L618:     renderFrames(analysisResult);
+L619:     renderCharts(analysisResult);
+L620:     renderStructure(analysisResult);
+L621: 
+L622:     show('featureBadges');
+L623:     show('metricsSection');
+L624:     show('tabsSection');
+L625:     hide('spinner');
+L626: 
+L627:     // ── 6. 启动语音转写（后台）──
+L628:     $('spinnerSub').textContent = '启动语音转写...';
+L629:     setBadge('badgeSpeech','running','启动中');
+L630:     setStep('stepUpload','running');
+L631:     hideWhisperProgress();
+L632: 
+L633:     const jobId = await startTranscription(file, duration);
+L634:     if (jobId) {
+L635:       transcribeJobId = jobId;
+L636:       setStep('stepUpload','done','完成');
+L637:       setBadge('badgeSpeech','running','转写中');
+L638:       updateWhisperProgress(40, null);  // 显示进度条，每 2s 轮询更新
+L639: 
+L640:       // Poll every 2s
+L641:       transcribePollTimer = setInterval(() => pollTranscribeResult(jobId), 2000);
+L642:       // Also start immediately
+L643:       pollTranscribeResult(jobId);
+L644:     } else {
+L645:       // Backend unavailable
+L646:       setBadge('badgeSpeech','fail','服务未启动');
+L647:       setStep('stepUpload','fail');
+L648:       $('speechTimeline').innerHTML = `<div style="color:var(--yellow);font-size:0.8rem;padding:1rem 0;">
+L649:         &#9888; 转写服务未启动。请先运行以下命令启动服务：<br>
+L650:         <code style="background:#232636;padding:0.3rem 0.6rem;border-radius:6px;display:inline-block;margin-top:0.5rem;font-size:0.75rem;">
+L651:           python transcribe_server.py --port 8766
+L652:         </code>
+L653:       </div>`;
+L654:     }
+L655: 
+L656:     toast(`分析完成！类型: ${fullContentType.label} | 帧: ${frames.length}`);
+L657: 
+L658:   } catch(err) {
+L659:     console.error(err);
+L660:     hide('spinner');
+L661:     toast('分析失败: ' + err.message, 'error');
+L662:   }
+L663: }
+L664: 
+L665: 
+L666:     const phaseLogic = contentType.phaseLogic || ((f) => ({ name: 'SCENE', label: '场景', color: '#94a3b8' }));
+L667:     const p = phaseLogic(f);
+L668:     if (!current || current.name !== p.name) {
+L669:       if (current) phases.push(current);
+L670:       current = { ...p, start: f.t, end: f.t, frames: [f] };
+L671:     } else {
+L672:       current.end = f.t;
+L673:       current.frames.push(f);
+L674:     }
+L675:   }
+L676:   if (current) phases.push(current);
+L677:   return phases;
+L678: }
+L679: 
+L680: // ═══════════════════════════════════════════════════════════════
+L681: // Transcribe API
+L682: // ═══════════════════════════════════════════════════════════════
+L683: async function startTranscription(file, duration) {
+L684:   const formData = new FormData();
+L685: 
+L686:   formData.append('video', file);
+L687:   formData.append('duration', String(duration));
+L688: 
+L689:   try {
+L690:     const resp = await fetch('http://192.168.0.8:8766/api/transcribe', {
+L691:       method: 'POST',
+L692:       body: formData,
+L693:     });
+L694:     const data = await resp.json();
+L695:     if (data.error) throw new Error(data.error);
+L696:     return data.job_id;
+L697:   } catch(e) {
+L698:     console.error('Transcribe start failed:', e);
+L699:     return null;
+L700:   }
+L701: }
+L702: 
+L703: async function pollTranscribeResult(jobId) {
+L704:   try {
+L705:     // Status
+L706:     const statusResp = await fetch(`http://192.168.0.8:8766/api/status/${jobId}`);
+L707:     const statusData = await statusResp.json();
+L708: 
+L709:     // Update step indicators
+L710:     setStep('stepUpload', 'done', '完成');
+L711:     if (statusData.status === 'extracting' || statusData.status === 'starting') {
+L712:       setStep('stepExtract', 'running');
+L713:       setStep('stepWhisper', 'wait');
+L714:       setStep('stepDone', 'wait');
+L715:     } else if (statusData.status === 'transcribing') {
+L716:       setStep('stepExtract', 'done', '完成');
+L717:       setStep('stepWhisper', 'running');
+L718:       setStep('stepDone', 'wait');
+L719:       // Whisper 进度条实时更新
+L720:       updateWhisperProgress(statusData.progress || 40, statusData.estimated_remaining);

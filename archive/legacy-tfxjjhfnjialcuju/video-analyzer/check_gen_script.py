@@ -1,0 +1,8 @@
+fpath = r"C:\Users\EDY\.qclaw\workspace-tfxjjhfnjialcuju\video-analyzer\web_player.html"
+with open(fpath, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+# Show lines 1175-1200 to see genScript call context
+for i in range(1174, 1200):
+    if i < len(lines):
+        print("L" + str(i+1) + ":", repr(lines[i].rstrip()[:100]))
