@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Content Analyzer · 短视频竞品反向拆解工具</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #141821;
+    --panel2: #1a1f2c;
+    --border: #262c3d;
+    --text: #e2e8f0;
+    --muted: #8b93a7;
+    --accent: #6366f1;
+    --accent2: #818cf8;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --radius: 12px;
+    --font: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Header ── */
+  header {
+    padding: 72px 0 48px;
+    background: radial-gradient(ellipse at 50% -20%, rgba(99,102,241,.18), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  .badge {
+    display: inline-block; font-size: 12px; color: var(--accent2);
+    border: 1px solid rgba(99,102,241,.4); border-radius: 99px;
+    padding: 3px 12px; margin-bottom: 18px; letter-spacing: .5px;
+  }
+  h1 { font-size: 44px; font-weight: 700; letter-spacing: -.5px; line-height: 1.2; }
+  h1 .grad { background: linear-gradient(90deg, var(--accent), var(--purple)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { color: var(--muted); font-size: 17px; margin-top: 16px; max-width: 640px; }
+  .header-actions { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 10px 22px; border-radius: 10px; text-decoration: none;
+    font-size: 14px; font-weight: 500; transition: all .2s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #4f52e0; transform: translateY(-1px); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* ── Section ── */
+  section { padding: 56px 0; border-bottom: 1px solid var(--border); }
+  .sec-title { font-size: 13px; color: var(--accent2); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .sec-head { font-size: 28px; font-weight: 600; margin-bottom: 12px; }
+  .sec-desc { color: var(--muted); margin-bottom: 32px; max-width: 720px; }
+
+  /* ── Flow / Pipeline ── */
+  .pipeline { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 24px 0; }
+  .step {
+    flex: 1; min-width: 140px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 16px; text-align: center; position: relative;
+  }
+  .step .icon { font-size: 26px; margin-bottom: 8px; }
+  .step .name { font-size: 14px; font-weight: 600; }
+  .step .desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .step-arrow { display: flex; align-items: center; color: var(--accent); font-size: 20px; padding: 0 6px; }
+  @media (max-width: 700px) { .step-arrow { display: none; } .step { min-width: 45%; margin-bottom: 10px; } }
+
+  /* ── Cards grid ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; transition: border-color .2s, transform .2s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .icon { font-size: 24px; margin-bottom: 10px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; font-weight: 600; }
+  .card p { font-size: 13.5px; color: var(--muted); }
+  .card ul { font-size: 13px; color: var(--muted); padding-left: 18px; margin-top: 6px; }
+  .card ul li { margin: 3px 0; }
+
+  /* ── Feature rows ── */
+  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; margin-bottom: 48px; }
+  .feat:last-child { margin-bottom: 0; }
+  .feat.reverse { direction: rtl; }
+  .feat.reverse > * { direction: ltr; }
+  .feat-text h3 { font-size: 21px; margin-bottom: 10px; font-weight: 600; }
+  .feat-text p { color: var(--muted); font-size: 14.5px; }
+  .feat-text .tag { display: inline-block; font-size: 12px; color: var(--accent2); border: 1px solid rgba(99,102,241,.3); padding: 2px 10px; border-radius: 99px; margin: 14px 6px 0 0; }
+  .feat-visual {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px; font-size: 13px; color: var(--muted); font-family: "SF Mono", Consolas, monospace;
+  }
+  @media (max-width: 800px) { .feat, .feat.reverse { grid-template-columns: 1fr; direction: ltr; } }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 560px; }
+  th { background: var(--panel2); color: var(--accent2); text-align: left; padding: 12px 16px; font-weight: 500; white-space: nowrap; }
+  td { padding: 11px 16px; border-top: 1px solid var(--border); color: var(--text); }
+  td.muted { color: var(--muted); }
+  tr:hover td { background: rgba(99,102,241,.04); }
+
+  /* ── Code block ── */
+  pre {
+    background: #0f1219; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; font-size: 13px; overflow-x: auto; color: #c8d0e0;
+    font-family: "SF Mono", Consolas, monospace; line-height: 1.6;
+  }
+  pre .c { color: #5b6478; }
+  code.inline { background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; font-size: 13px; font-family: "SF Mono", Consolas, monospace; color: var(--accent2); }
+
+  /* ── Badges row ── */
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+  .pill { font-size: 12.5px; padding: 5px 14px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); }
+  .pill.hl { border-color: rgba(99,102,241,.4); color: var(--accent2); }
+
+  /* ── Architecture diagram ── */
+  .arch { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; }
+  .arch-node {
+    text-align: center; padding: 14px; border-radius: 10px; font-size: 13.5px;
+    background: var(--panel2); border: 1px solid var(--border);
+  }
+  .arch-node.hl { border-color: var(--accent); color: var(--accent2); background: rgba(99,102,241,.08); }
+  .arch-row { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
+  .arch-arrow { color: var(--accent); font-size: 18px; }
+  .arch-label { text-align: center; color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  /* ── Stats ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin: 24px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+  .stat .num { font-size: 30px; font-weight: 700; color: var(--accent2); }
+  .stat .lbl { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+
+  footer { padding: 48px 0; text-align: center; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--accent2); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="badge">OPEN SOURCE · LOCAL-FIRST · PRIVATE</div>
+    <h1>Video Content Analyzer <span class="grad">短视频竞品反向拆解工具</span></h1>
+    <p class="subtitle">
+      上传竞品短视频 → Whisper 语音转写 → LLM 深度文案拆解 → 自动生成<b>九节结构化报告</b>（含分镜头表、口播拆解、爆款文案库），直接指导编导团队复刻拍摄。
+    </p>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="https://github.com/yao97/video-analyzer">GitHub 仓库</a>
+      <a class="btn btn-ghost" href="#features">核心功能</a>
+      <a class="btn btn-ghost" href="#architecture">系统架构</a>
+      <a class="btn btn-ghost" href="#quickstart">快速开始</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num">4</div><div class="lbl">核心 Tab</div></div>
+      <div class="stat"><div class="num">9</div><div class="lbl">报告章节</div></div>
+      <div class="stat"><div class="num">9</div><div class="lbl">内容类型识别</div></div>
+      <div class="stat"><div class="num">4</div><div class="lbl">LLM 服务商</div></div>
+      <div class="stat"><div class="num">600MB</div><div class="lbl">最大视频</div></div>
+      <div class="stat"><div class="num">1</div><div class="lbl">单命令启动</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 处理流水线 ═══ -->
+<section>
+  <div class="container">
+    <div class="sec-title">Pipeline</div>
+    <h2 class="sec-head">一条流水线，从视频到可执行报告</h2>
+    <p class="sec-desc">全流程本地优先：画面分析在浏览器完成，语音转写由本地 Whisper 执行，深度分析可对接本地 Ollama 或云端大模型。</p>
+    <div class="pipeline">
+      <div class="step"><div class="icon">📤</div><div class="name">上传视频</div><div class="desc">拖拽上传，自动识别横竖屏与元数据</div></div>
+      <div class="step-arrow">→</div>
+      <div class="step"><div class="icon">🎞️</div><div class="name">关键帧抽取</div><div class="desc">Canvas 逐帧分析 RGB/亮度/运动</div></div>
+      <div class="step-arrow">→</div>
+      <div class="step"><div class="icon">🧠</div><div class="name">内容识别</div><div class="desc">9 种内容类型特征权重评分</div></div>
+      <div class="step-arrow">→</div>
+      <div class="step"><div class="icon">🗣️</div><div class="name">语音转写</div><div class="desc">Whisper 分片并行转写 + 关键词提取</div></div>
+      <div class="step-arrow">→</div>
+      <div class="step"><div class="icon">📊</div><div class="name">深度分析</div><div class="desc">LLM 生成九节结构化拆解报告</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 核心功能 ═══ -->
+<section id="features">
+  <div class="container">
+    <div class="sec-title">Features</div>
+    <h2 class="sec-head">核心功能</h2>
+    <p class="sec-desc">四大 Tab 覆盖「分析 → 拆解 → 报告」全链路，每个产出都可直接用于编导工作流。</p>
+
+    <div class="feat">
+      <div class="feat-text">
+        <h3>🗣️ 语音转写 · Whisper</h3>
+        <p>按 15 秒分片 + 多线程并行转写，实时进度百分比与剩余时间预估；输出带时间戳的分段文本，自动提取高频词 / 动作词 / 情绪词 / 产品词。</p>
+        <span class="tag">tiny / base / small / medium 四档模型</span>
+        <span class="tag">CPU/GPU 自动检测</span>
+      </div>
+      <div class="feat-visual">
+<pre><span class="c"># 上传 → 转写 → 结果，三步异步</span>
+POST /api/transcribe          <span class="c">→ job_id</span>
+GET  /api/status/{job_id}     <span class="c">→ extracting / transcribing / done</span>
+GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
+
+<span class="c"># 示例输出</span>
+[0.0s-3.0s] 家人们，今天给大家推荐一款非常好用的产品
+[3.0s-6.0s] 它真的特别棒，用过都说好
+<span class="c"># keywords: {highFreq:[推荐,产品], actions:[推荐,点击]}</span></pre>
+      </div>
+    </div>
+
+    <div class="feat reverse">
+      <div class="feat-text">
+        <h3>🤖 深度拆解 · 九节带货报告</h3>
+        <p>把「转写全文 + 帧摘要 + 视频元数据」打包发给大模型，按<b>九节带货结构</b>生成可直接指导拍摄的报告：一句话总结 → 原文信息 → 深度反向拆解（叙事主权 4 步）→ 口播逐段表 → 分镜头表 → 5A 人群流转 → 爆款文案库 → 对标行业 → 团队落地要点。</p>
+        <span class="tag">叙事主权：破霸权 / 建标准 / 立人设 / 收闭环</span>
+      </div>
+      <div class="feat-visual">
+<pre><span class="c">### 一句话总结</span>
+核心结论 · 流量打法 · 叙事主权破局点
+
+<span class="c">### 口播逐段拆解</span>
+| 时长 | 模块 | 核心作用 | 5A |
+|------|------|---------|----|
+| 0-3s | 开场钩子 | 制造焦虑 | A1 |
+
+<span class="c">### 分镜头拆解</span>
+| 编号 | 景别 | 画面 | 情绪流转 |
+|------|------|------|---------|
+| L01  | 特写 | 产品旋转 | 好奇 → 渴望 |</pre>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-text">
+        <h3>🎞️ 画面分析 · 9 种内容类型</h3>
+        <p>逐帧提取 RGB / 亮度 / 运动 / 文字密度 / 皮肤 / 白底 / 蓝色 / 暗光 / 色调 / 构图特征，按特征权重矩阵自动识别<b>电商带货、Vlog、医美、美食、教育、影视剪辑、直播带货、动漫、屏幕录制</b> 9 种内容类型。</p>
+      </div>
+      <div class="feat-visual">
+<pre><span class="c"># 特征信号示例（电商带货）</span>
+白底背景      +2.0
+产品展示      +1.5
+字幕密集      +1.0
+稳定镜头      +0.8
+<span class="c"># 全帧加权 → 得分最高 = 识别结果</span>
+得分: ECOMMERCE 0.92 · 可信度 92%</pre>
+      </div>
+    </div>
+
+    <div class="feat reverse">
+      <div class="feat-text">
+        <h3>🔐 安全 · Key 仅存浏览器</h3>
+        <p>API Key 保存在浏览器内存，随请求发送到本地后端做代理转发，后端不落库、不记录、不存储。刷新页面即清除，切换服务商需重新输入。</p>
+        <span class="tag">SiliconFlow</span><span class="tag">DeepSeek</span><span class="tag">Ollama</span><span class="tag">智谱</span>
+      </div>
+      <div class="feat-visual">
+<pre>┌──────────────┐      ┌───────────────┐      ┌────────────────┐
+│  浏览器前端    │─────▶│  本地后端 8766  │─────▶│  SiliconFlow /  │
+│ (Key 在内存)  │◀─────│ (代理转发,不存储)│◀─────│  Ollama / ...   │
+└──────────────┘      └───────────────┘      └────────────────┘</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 技术栈 ═══ -->
+<section>
+  <div class="container">
+    <div class="sec-title">Tech Stack</div>
+    <h2 class="sec-head">技术栈</h2>
+    <div class="pill-row">
+      <span class="pill hl">Flask 3</span><span class="pill">Whisper (openai)</span><span class="pill">PyTorch CPU</span>
+      <span class="pill">soundfile / imageio-ffmpeg</span><span class="pill">jieba 分词</span><span class="pill">zhconv 简繁</span>
+      <span class="pill">原生 HTML/CSS/JS</span><span class="pill">Chart.js</span><span class="pill">Docker / Compose</span>
+      <span class="pill">SiliconFlow API</span><span class="pill">DeepSeek API</span><span class="pill">Ollama</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>层面</th><th>技术</th><th>说明</th></tr>
+        <tr><td>后端框架</td><td>Flask 3 + threading</td><td class="muted">单进程同时 serve API 与前端静态页</td></tr>
+        <tr><td>任务模型</td><td>内存 dict + 线程锁</td><td class="muted">异步 job：POST 创建 → 前端 2s 轮询状态</td></tr>
+        <tr><td>语音转写</td><td>openai-whisper</td><td class="muted">15s 分片并行，tiny→medium 四档模型</td></tr>
+        <tr><td>深度分析</td><td>LLM API</td><td class="muted">硅基流动 / DeepSeek / Ollama / 智谱</td></tr>
+        <tr><td>前端</td><td>原生 HTML/CSS/JS</td><td class="muted">零构建，4 Tab 单文件</td></tr>
+        <tr><td>部署</td><td>Docker Compose</td><td class="muted">api + 可选 ollama 服务，Whisper 模型卷缓存</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 架构 ═══ -->
+<section id="architecture">
+  <div class="container">
+    <div class="sec-title">Architecture</div>
+    <h2 class="sec-head">单体优先的架构</h2>
+    <p class="sec-desc">当前运行版为单体 Flask 服务，单命令启动、零外部依赖；可选的 Docker Compose 编排支持 API + Ollama 容器化部署。</p>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="arch-node" style="min-width:180px">🌐 浏览器前端<br><span style="color:var(--muted);font-size:12px">web_player.html · 4 Tab</span></div>
+        <div class="arch-arrow">⬅➡</div>
+        <div class="arch-node hl" style="min-width:200px">🐍 Flask 后端 :8766<br><span style="color:var(--muted);font-size:12px">transcribe_server.py</span></div>
+      </div>
+      <div class="arch-label">· 上传 / 转写 / 分析 / 前端静态服务 ·</div>
+      <div class="arch-row" style="margin-top:18px">
+        <div class="arch-node" style="min-width:170px">🎤 Whisper 模型<br><span style="color:var(--muted);font-size:12px">本地 CPU 推理</span></div>
+        <div class="arch-node" style="min-width:170px">🔑 LLM 服务商<br><span style="color:var(--muted);font-size:12px">SF / DeepSeek / Ollama / 智谱</span></div>
+        <div class="arch-node" style="min-width:150px">📦 临时文件<br><span style="color:var(--muted);font-size:12px">系统 temp，用完即删</span></div>
+      </div>
+      <div class="arch-row" style="margin-top:16px">
+        <pre style="flex:1;min-width:280px"><span class="c"># Docker 部署</span>
+docker compose up -d --build
+<span class="c"># 启用本地 Ollama LLM</span>
+docker compose --profile llm up -d
+<span class="c"># 使用宿主机 Ollama</span>
+OLLAMA_BASE=http://host.docker.internal:11434</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 快速开始 ═══ -->
+<section id="quickstart">
+  <div class="container">
+    <div class="sec-title">Quick Start</div>
+    <h2 class="sec-head">快速开始</h2>
+    <pre><span class="c"># 1. 本地运行（需 Python 3.10+ 与 ffmpeg）</span>
+pip install -r backend/requirements.txt
+cd backend && python transcribe_server.py --host 0.0.0.0 --port 8766 --model small
+
+<span class="c"># 2. 浏览器打开</span>
+http://localhost:8766/
+
+<span class="c"># 3. Docker 部署</span>
+cp .env.example .env   <span class="c"># 填 LLM_API_KEY / LLM_PROVIDER</span>
+docker compose up -d --build</pre>
+  </div>
+</section>
+
+<!-- ═══ 项目结构 ═══ -->
+<section>
+  <div class="container">
+    <div class="sec-title">Repository</div>
+    <h2 class="sec-head">项目结构</h2>
+    <pre>
+video-analyzer/
+├── backend/
+│   ├── transcribe_server.py   <span class="c"># 单体 Flask：转写 + 深度分析 + serve 前端</span>
+│   └── requirements.txt
+├── frontend/
+│   ├── web_player.html        <span class="c"># 前端唯一真相源（4 Tab）</span>
+│   └── jszip.min.js
+├── Dockerfile                 <span class="c"># Flask + Whisper + ffmpeg</span>
+├── docker-compose.yml         <span class="c"># api + 可选 ollama</span>
+├── docs/                      <span class="c"># 三份完整文档（功能/优化/后端手册）</span>
+├── .env.example               <span class="c"># 部署环境变量模板</span>
+└── archive/                   <span class="c"># 旧 FastAPI 微服务架构（已归档）</span></pre>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p><a href="https://github.com/yao97/video-analyzer">github.com/yao97/video-analyzer</a> · Video Content Analyzer · 短视频竞品反向拆解</p>
+    <p style="margin-top:6px">Whisper 转写 · LLM 深度拆解 · 九节结构化报告</p>
+  </div>
+</footer>
+
+</body>
+</html>
