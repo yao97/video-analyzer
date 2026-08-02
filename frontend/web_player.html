@@ -741,7 +741,8 @@ async function startTranscribeWithEngine() {
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
-    hide('btnStartTranscribe');
+    const btnStart = $('btnStartTranscribe');
+    if (btnStart) btnStart.style.display = 'none';
     setStep('stepExtract', 'done', '完成');
     setStep('stepWhisper', 'running');
     setBadge('badgeSpeech', 'running', engine === 'qwen3_asr' ? 'Qwen3-ASR 转写中' : '转写中');
@@ -759,7 +760,9 @@ async function startTranscribeWithEngine() {
 // 音频就绪时显示引擎选择区
 function showAsrEngineSelector() {
   hide('whisperProgressWrap');
-  show('btnStartTranscribe');
+  // 按钮用 inline style="display:none"，必须直接设 style.display（classList 的 hidden 无效）
+  const btn = $('btnStartTranscribe');
+  if (btn) btn.style.display = '';
   onAsrEngineChange();
 }
 
