@@ -49,6 +49,12 @@ _whisper_model_lock = threading.Lock()
 _whisper_model_name = "small"  # default, overridden by --model arg
 _ffmpeg_exe = None
 
+# 并发转写信号量：限制同时进行的转写任务数。
+# 多视频并发会同时触发 Whisper 模型实例加载（torch.set_num_threads 全局竞争），
+# 曾导致进程卡死（job 停在 22%）。限制并发可彻底避免。
+MAX_CONCURRENT_TRANSCRIBE = 2
+_transcribe_semaphore = threading.Semaphore(MAX_CONCURRENT_TRANSCRIBE)
+
 # 可选模型列表（前端下拉框用）
 WHISPER_MODEL_CHOICES = [
     ("tiny", "Tiny — 最快(约5x)，适合快速预览"),
@@ -429,7 +435,12 @@ def transcribe_audio_chunked(wav_path: str, duration: float, job_id: str, model_
 
     def _transcribe_one(c_idx, c_data, c_start, c_end):
 
-        m = model_pool.get()
+        try:
+            # 取模型加超时：防止模型实例加载失败导致池空时无限等待（死锁）
+            m = model_pool.get(timeout=120)
+        except queue_mod.Empty:
+            print(f"[Chunk {c_idx+1}] 等待模型超时（120s），跳过该分片", flush=True)
+            return c_idx, {"text": "", "segments": []}
 
         try:
 
@@ -766,6 +777,8 @@ def extract_keywords(text: str) -> dict:
 
 def run_transcription(job_id: str, video_path: str, duration: float, model_name: str = None):
 
+    # 并发限制：超出上限的任务排队等待（避免多实例模型加载竞争卡死）
+    _transcribe_semaphore.acquire()
     try:
 
         jobs[job_id]["status"] = "extracting"
@@ -884,14 +897,14 @@ def run_transcription(job_id: str, video_path: str, duration: float, model_name:
 
 
 
-        # 5. 清理临时 WAV
-
+        # 5. 清理临时 WAV 和视频文件（防止长期运行磁盘膨胀）
         try:
-
             os.remove(wav_path)
-
         except:
-
+            pass
+        try:
+            os.remove(video_path)
+        except:
             pass
 
 
@@ -928,6 +941,10 @@ def run_transcription(job_id: str, video_path: str, duration: float, model_name:
 
         jobs[job_id]["progress"] = 100
 
+    finally:
+        # 释放并发槽位，让排队的下一个转写任务继续
+        _transcribe_semaphore.release()
+
 
 
 # ── API 路由 ──
@@ -946,7 +963,13 @@ def api_transcribe():
 
     video_file = request.files["video"]
 
-    duration = float(request.form.get("duration", 60))
+    # duration 异常保护：非法值（非数值/<=0/NaN）回退默认 60 秒，避免 float() 抛 ValueError → 500
+    try:
+        duration = float(request.form.get("duration", 60))
+        if duration != duration or duration <= 0 or duration > 36000:  # NaN 自比较 / 上限 10h
+            duration = 60.0
+    except (TypeError, ValueError):
+        duration = 60.0
 
     # 模型选择（前端传来的 model 参数）
 
