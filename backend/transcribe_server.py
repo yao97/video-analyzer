@@ -869,23 +869,6 @@ def api_result(job_id):
 
 
 
-    # 清理视频临时文件
-
-    vp = job.get("video_path")
-
-    if vp and os.path.exists(vp):
-
-        try:
-
-            os.remove(vp)
-
-            print(f"[Cleanup] 删除临时视频: {vp}")
-
-        except:
-
-            pass
-
-
 
     return jsonify({"job_id": job_id, "status": "done", "result": job["result"]})
 
