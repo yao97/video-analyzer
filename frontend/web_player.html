@@ -391,12 +391,12 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
       </div>
     </div>
 
-    <!-- ── 智能分析（P0：钩子/BGM/卡点/算法评分）── -->
+    <!-- ── 智能分析（钩子分析）── -->
     <div id="tabP0" class="tab-panel">
       <div class="section">
         <div class="section-title">&#9889; <span>智能分析</span> <span id="p0Status" style="font-size:0.72rem;color:#6b7084;font-weight:400;"></span></div>
         <div style="font-size:0.76rem;color:#6b7084;line-height:1.7;margin-bottom:0.8rem;">
-          基于视频画面 + 音频 + 转写文本，本地计算钩子强度 / BGM 节奏 / 剪辑卡点 / 算法兼容性评分。全部本地运行，无云端上传。
+          基于视频画面 + 音频 + 转写文本，本地计算前3秒黄金钩子强度与类型。全部本地运行，无云端上传。
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
           <button id="btnRunP0" class="btn btn-primary" onclick="runP0Analysis()" style="font-size:0.75rem;padding:0.4rem 1rem;">&#9889; 一键智能分析</button>
@@ -414,31 +414,13 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
             <div id="p0HookMeta" style="font-size:0.72rem;color:#6b7084;line-height:1.7;"></div>
             <div id="p0HookSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
           </div>
-          <!-- BGM 卡片 -->
-          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
-            <div style="font-size:0.8rem;font-weight:700;color:#34d399;margin-bottom:0.5rem;">&#127925; BGM 识别与节奏</div>
-            <div style="font-size:0.76rem;color:#d1d5db;line-height:1.8;" id="p0BgmInfo">-</div>
-            <div style="margin-top:0.5rem;height:60px;background:#0d0f15;border-radius:6px;padding:0.4rem;overflow:hidden;">
-              <canvas id="p0BgmCanvas" style="width:100%;height:100%;"></canvas>
+          <!-- 音频能量曲线（原 BGM 接口保留的价值数据） -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
+            <div style="font-size:0.8rem;font-weight:700;color:#34d399;margin-bottom:0.5rem;">&#127925; 全片音频能量曲线</div>
+            <div style="font-size:0.72rem;color:#6b7084;line-height:1.6;margin-bottom:0.4rem;">逐秒 RMS 能量，峰值时段即内容高潮/重点段</div>
+            <div style="height:80px;background:#0d0f15;border-radius:6px;padding:0.4rem;overflow:hidden;">
+              <canvas id="p0EnergyCanvas" style="width:100%;height:100%;"></canvas>
             </div>
-          </div>
-          <!-- 卡点卡片 -->
-          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
-            <div style="font-size:0.8rem;font-weight:700;color:#fbbf24;margin-bottom:0.5rem;">&#127912; 剪辑卡点分析</div>
-            <div style="font-size:0.76rem;color:#d1d5db;line-height:1.8;" id="p0RhythmInfo">-</div>
-            <div id="p0RhythmSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
-          </div>
-          <!-- 算法评分卡片 -->
-          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
-            <div style="font-size:0.8rem;font-weight:700;color:#f472b6;margin-bottom:0.5rem;">&#128202; 算法兼容性评分</div>
-            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
-              <div style="text-align:center;">
-                <div id="p0AlgoScore" style="font-size:1.6rem;font-weight:800;color:#fbbf24;">-</div>
-                <div style="font-size:0.62rem;color:#6b7084;">/100</div>
-              </div>
-              <div id="p0AlgoInfo" style="font-size:0.76rem;color:#d1d5db;line-height:1.8;">-</div>
-            </div>
-            <div id="p0AlgoSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.4rem;"></div>
           </div>
         </div>
       </div>
@@ -564,33 +546,13 @@ async function runP0Analysis() {
   $('p0Result').style.display = '';
   try {
     const payload = { job_id: transcribeJobId };
-    // 1. 钩子分析
     $('p0Status').textContent = '正在分析前3秒钩子...';
     const hook = await postJSON('/api/hook-analysis', payload, 180000);
     if (hook.error) throw new Error(hook.error);
     renderP0Hook(hook);
-    // 2. BGM 分析
-    $('p0Status').textContent = '正在分析 BGM 节奏...';
-    const bgm = await postJSON('/api/bgm-analysis', payload, 300000);
-    if (bgm.error) throw new Error(bgm.error);
-    renderP0Bgm(bgm);
-    // 3. 卡点分析（带 BGM 节拍）
-    $('p0Status').textContent = '正在分析剪辑卡点...';
-    const rhythm = await postJSON('/api/rhythm-analysis', {
-      job_id: transcribeJobId, beat_times: bgm.beat_times || []
-    }, 300000);
-    if (rhythm.error) throw new Error(rhythm.error);
-    renderP0Rhythm(rhythm);
-    // 4. 算法评分（规则层）
-    $('p0Status').textContent = '正在计算算法评分...';
-    const algo = await postJSON('/api/algorithm-score', {
-      job_id: transcribeJobId, use_llm: false,
-      hook_analysis: hook, bgm_analysis: bgm, rhythm_analysis: rhythm
-    }, 60000);
-    if (algo.error) throw new Error(algo.error);
-    renderP0Algo(algo);
+    renderP0Energy(hook.energy_curve || []);
     $('p0Status').textContent = '✓ 分析完成';
-    _p0State = { hook, bgm, rhythm, algo };
+    _p0State = { hook };
   } catch (e) {
     console.error('P0 analysis failed:', e);
     $('p0Status').textContent = '✗ 分析失败: ' + e.message;
@@ -613,66 +575,40 @@ function renderP0Hook(h) {
   $('p0HookSuggest').innerHTML = (h.suggestions || []).map(s => '&#128161; ' + s).join('<br>');
 }
 
-function renderP0Bgm(b) {
-  const parts = [
-    '存在BGM：' + (b.has_bgm ? '是 (置信度 ' + Math.round((b.bgm_confidence||0)*100) + '%)' : '否'),
-    'BPM：' + (b.bpm || '--'),
-    '风格：' + (b.bgm_style || '--'),
-    '节拍数：' + (b.beat_count || 0),
-    '节奏评分：' + (b.rhythm_score ?? '-') + '/100',
-    '能量峰值：' + (b.energy_peak_time ?? '-') + 's',
-  ];
-  $('p0BgmInfo').textContent = parts.join(' · ');
-  // 绘制能量曲线
-  const curve = b.energy_curve || [];
-  const canvas = $('p0BgmCanvas');
-  if (canvas && curve.length > 1) {
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.clientWidth * 2 || 600;
-    const H = canvas.height = canvas.clientHeight * 2 || 120;
-    ctx.clearRect(0, 0, W, H);
-    ctx.beginPath();
-    const step = curve.length > W ? curve.length / W : 1;
-    for (let x = 0; x < W; x++) {
-      const idx = Math.min(curve.length - 1, Math.floor(x * step));
-      const y = H - (curve[idx] / (Math.max(...curve) || 1)) * (H - 8) - 4;
-      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = '#34d399';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+function renderP0Energy(curve) {
+  const canvas = $('p0EnergyCanvas');
+  if (!canvas || !curve || curve.length < 2) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = (canvas.clientWidth || 600) * 2;
+  const H = canvas.height = (canvas.clientHeight || 80) * 2;
+  ctx.clearRect(0, 0, W, H);
+  // 网格线
+  ctx.strokeStyle = '#1e2130';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const gy = H * i / 4;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
   }
-}
-
-function renderP0Rhythm(r) {
-  const parts = [
-    '切镜：' + (r.cut_count ?? 0) + ' 次',
-    '频率：' + (r.cut_frequency ?? '--') + ' 次/分',
-    '模式：' + (r.cut_pattern || '--'),
-    '卡点同步率：' + Math.round((r.sync_rate||0)*100) + '%',
-    '节奏评分：' + (r.rhythm_score ?? '-') + '/100',
-    r.is_beat_synced ? '&#9989; 是卡点视频' : '&#10060; 非卡点视频',
-  ];
-  $('p0RhythmInfo').innerHTML = parts.join('<br>');
-  $('p0RhythmSuggest').innerHTML = (r.suggestions || []).map(s => '&#128161; ' + s).join('<br>');
-}
-
-function renderP0Algo(a) {
-  $('p0AlgoScore').textContent = a.total_score ?? '-';
-  const info = ['等级：' + (a.grade || '--')];
-  const comp = a.compliance || {};
-  const riskCount = (comp.absolute_words||[]).length + (comp.medical_words||[]).length + (comp.external_link_words||[]).length;
-  info.push('合规风险：' + (comp.risk_level || 'low') + (riskCount ? ' (' + riskCount + ' 处)' : ''));
-  if (a.traffic_pool_prediction) info.push('流量池预测：' + a.traffic_pool_prediction);
-  $('p0AlgoInfo').innerHTML = info.join('<br>');
-  const risks = [];
-  (comp.absolute_words||[]).forEach(w => risks.push('绝对词「' + w + '」'));
-  (comp.medical_words||[]).forEach(w => risks.push('医疗词「' + w + '」'));
-  (comp.external_link_words||[]).forEach(w => risks.push('外链词「' + w + '」'));
-  const suggests = [];
-  if (risks.length) suggests.push('&#9888; 合规风险词：' + risks.join('、'));
-  (a.optimization_suggestions || []).forEach(s => suggests.push('&#128161; ' + s));
-  $('p0AlgoSuggest').innerHTML = suggests.join('<br>') || '&#128161; 无风险词，算法友好度良好';
+  // 能量曲线
+  const maxV = Math.max(...curve.map(p => p.energy || 0), 0.0001);
+  ctx.beginPath();
+  const step = curve.length > W ? curve.length / W : 1;
+  for (let x = 0; x < W; x++) {
+    const idx = Math.min(curve.length - 1, Math.floor(x * step));
+    const y = H - 4 - (curve[idx].energy / maxV) * (H - 8);
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#34d399';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // 时间刻度（每 1/8 处标注秒数）
+  ctx.fillStyle = '#6b7084';
+  ctx.font = '10px sans-serif';
+  for (let i = 0; i <= 8; i += 2) {
+    const sec = Math.round(curve.length * i / 8);
+    const tx = W * i / 8;
+    ctx.fillText(sec + 's', tx + 2, H - 2);
+  }
 }
 
 async function postJSON(url, body, timeout = 60000) {
