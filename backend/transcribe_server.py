@@ -529,13 +529,9 @@ def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_nam
         jobs[job_id]["progress"] = 90
         jobs[job_id]["detail"] = "正在后处理（繁简转换、关键词提取）..."
 
-        # 清理临时 WAV 和视频文件（防止长期运行磁盘膨胀）
+        # 清理临时 WAV（视频文件保留：P0 钩子/BGM/卡点分析需要，由启动时定时清理旧文件）
         try:
             os.remove(wav_path)
-        except:
-            pass
-        try:
-            os.remove(video_path)
         except:
             pass
 
@@ -1603,6 +1599,176 @@ def api_test_api_key():
 
 
 
+# ── P0 升级功能：钩子/BGM/卡点/算法评分 ──
+# 由 media_analysis 模块提供实现（延迟 import，缺依赖时返回错误而非崩溃）
+
+def _resolve_video(job_id=None, video_path=None):
+    """解析视频文件路径：优先 job_id，其次显式 video_path。
+
+    返回 (video_path, error)。error 为 None 表示成功。
+    """
+    if job_id and job_id in jobs:
+        p = jobs[job_id].get("video_path")
+        if p and os.path.exists(p):
+            return p, None
+        return None, "任务对应的视频文件不存在（可能已被清理）"
+    if video_path and os.path.exists(video_path):
+        return video_path, None
+    return None, "缺少有效的 video_path 或 job_id"
+
+
+@app.route("/api/hook-analysis", methods=["POST"])
+def api_hook_analysis():
+    """P0-1 前3秒黄金钩子专项分析"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    # 取 ASR 分段/全文（若有）
+    asr_segments = None
+    asr_text = ""
+    if job_id in jobs and jobs[job_id].get("result"):
+        res = jobs[job_id]["result"]
+        asr_segments = res.get("segments")
+        asr_text = res.get("text", "")
+
+    try:
+        from media_analysis import analyze_hook
+        result = analyze_hook(vpath, asr_segments=asr_segments, asr_text=asr_text)
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"钩子分析失败: {e}"}), 500
+
+
+@app.route("/api/bgm-analysis", methods=["POST"])
+def api_bgm_analysis():
+    """P0-2 BGM 识别与节奏匹配"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+    cut_points = body.get("cut_points") or []
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    try:
+        from media_analysis import BGMAnalyzer, extract_audio_segment
+        import tempfile
+        import soundfile as sf
+        import librosa
+
+        # 提取完整音频（22.05kHz mono）
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+            wav_path = tf.name
+        try:
+            ok = extract_audio_segment(vpath, wav_path, 0.0, None, sr=22050)
+            if not ok:
+                return jsonify({"available": False, "error": "音频提取失败"}), 200
+            analyzer = BGMAnalyzer(sr=22050)
+            result = analyzer.analyze(wav_path, cut_points=cut_points)
+            return jsonify(result)
+        finally:
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"BGM 分析失败: {e}"}), 500
+
+
+@app.route("/api/rhythm-analysis", methods=["POST"])
+def api_rhythm_analysis():
+    """P0-3 剪辑卡点分析"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+    beat_times = body.get("beat_times") or []
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    try:
+        from media_analysis import RhythmAnalyzer
+        analyzer = RhythmAnalyzer()
+        result = analyzer.analyze(vpath, beat_times=beat_times)
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"卡点分析失败: {e}"}), 500
+
+
+@app.route("/api/algorithm-score", methods=["POST"])
+def api_algorithm_score():
+    """P0-4 算法兼容性评分卡（规则层 + 可选 LLM 层）"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+    use_llm = bool(body.get("use_llm", True))
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    # 取已有分析数据（若有）
+    transcription = ""
+    if job_id in jobs and jobs[job_id].get("result"):
+        transcription = jobs[job_id]["result"].get("text", "") or ""
+
+    hook = body.get("hook_analysis")
+    bgm = body.get("bgm_analysis")
+    rhythm = body.get("rhythm_analysis")
+    duration = body.get("duration")
+    if duration is None and job_id in jobs:
+        duration = jobs[job_id].get("duration")
+
+    def llm_callback(prompt):
+        """复用主服务的 call_llm_analyze"""
+        resp = call_llm_analyze(prompt)
+        if resp.get("report"):
+            return resp["report"]
+        return resp.get("error", "")
+
+    try:
+        from media_analysis import analyze_algorithm_score
+        result = analyze_algorithm_score(
+            duration=duration,
+            hook_analysis=hook,
+            bgm_analysis=bgm,
+            rhythm_analysis=rhythm,
+            transcription=transcription,
+            llm_fn=llm_callback if use_llm else None,
+        )
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"评分失败: {e}"}), 500
+
+
+
 # ── 启动 ──
 
 if __name__ == "__main__":
@@ -1615,6 +1781,20 @@ if __name__ == "__main__":
 
     parser.add_argument("--port", type=int, default=8766, help="监听端口")
     args = parser.parse_args()
+
+    # 启动时清理 24 小时前的临时视频/WAV（防止磁盘膨胀，保留最近分析所需文件）
+    try:
+        import time as _t
+        _cutoff = _t.time() - 24 * 3600
+        for _f in TEMP_DIR.glob("*"):
+            try:
+                if _f.stat().st_mtime < _cutoff:
+                    _f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        print("[Cleanup] 已清理 24 小时前的临时文件")
+    except Exception:
+        pass
 
 
     print(f"""

@@ -326,6 +326,7 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
   <div id="tabsSection" class="hidden">
     <div class="tabs">
       <button class="tab active" onclick="switchTab(this,'tabSpeech')">&#127911; 语音转写</button>
+      <button class="tab" onclick="switchTab(this,'tabP0')">&#9889; 智能分析</button>
       <button class="tab" onclick="switchTab(this,'tabFrames')">&#128444; 帧预览</button>
       <button class="tab" onclick="switchTab(this,'tabDeepReport')">&#128270; 深度拆解</button>
       <button class="tab" onclick="switchTab(this,'tabReport')">&#128196; 完整报告</button>
@@ -387,6 +388,59 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
       <div class="section">
         <div class="section-title">&#128221; <span>视频文案脚本</span> <span id="scriptPartsNote" class="count"></span></div>
         <div id="scriptParts" class="copy-analysis" style="font-size:0.8rem;line-height:2;color:#d1d5db;white-space:pre-wrap;"></div>
+      </div>
+    </div>
+
+    <!-- ── 智能分析（P0：钩子/BGM/卡点/算法评分）── -->
+    <div id="tabP0" class="tab-panel">
+      <div class="section">
+        <div class="section-title">&#9889; <span>智能分析</span> <span id="p0Status" style="font-size:0.72rem;color:#6b7084;font-weight:400;"></span></div>
+        <div style="font-size:0.76rem;color:#6b7084;line-height:1.7;margin-bottom:0.8rem;">
+          基于视频画面 + 音频 + 转写文本，本地计算钩子强度 / BGM 节奏 / 剪辑卡点 / 算法兼容性评分。全部本地运行，无云端上传。
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+          <button id="btnRunP0" class="btn btn-primary" onclick="runP0Analysis()" style="font-size:0.75rem;padding:0.4rem 1rem;">&#9889; 一键智能分析</button>
+          <span style="font-size:0.68rem;color:#4a4d63;">需要先上传视频并完成语音转写，效果最佳</span>
+        </div>
+        <div id="p0Result" style="display:none;">
+          <!-- 钩子分析卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#818cf8;margin-bottom:0.5rem;">&#127919; 前3秒黄金钩子</div>
+            <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
+              <span style="font-size:0.76rem;color:#d1d5db;">类型：<b id="p0HookType" style="color:#e2e8f0;">-</b></span>
+              <span style="font-size:0.76rem;color:#d1d5db;">强度：<b id="p0HookScore" style="color:#fbbf24;">-</b></span>
+              <span id="p0HookGrade" style="font-size:0.7rem;padding:0.15rem 0.5rem;background:#0f1117;border-radius:4px;color:#818cf8;"></span>
+            </div>
+            <div id="p0HookMeta" style="font-size:0.72rem;color:#6b7084;line-height:1.7;"></div>
+            <div id="p0HookSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
+          </div>
+          <!-- BGM 卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#34d399;margin-bottom:0.5rem;">&#127925; BGM 识别与节奏</div>
+            <div style="font-size:0.76rem;color:#d1d5db;line-height:1.8;" id="p0BgmInfo">-</div>
+            <div style="margin-top:0.5rem;height:60px;background:#0d0f15;border-radius:6px;padding:0.4rem;overflow:hidden;">
+              <canvas id="p0BgmCanvas" style="width:100%;height:100%;"></canvas>
+            </div>
+          </div>
+          <!-- 卡点卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#fbbf24;margin-bottom:0.5rem;">&#127912; 剪辑卡点分析</div>
+            <div style="font-size:0.76rem;color:#d1d5db;line-height:1.8;" id="p0RhythmInfo">-</div>
+            <div id="p0RhythmSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
+          </div>
+          <!-- 算法评分卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#f472b6;margin-bottom:0.5rem;">&#128202; 算法兼容性评分</div>
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+              <div style="text-align:center;">
+                <div id="p0AlgoScore" style="font-size:1.6rem;font-weight:800;color:#fbbf24;">-</div>
+                <div style="font-size:0.62rem;color:#6b7084;">/100</div>
+              </div>
+              <div id="p0AlgoInfo" style="font-size:0.76rem;color:#d1d5db;line-height:1.8;">-</div>
+            </div>
+            <div id="p0AlgoSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.4rem;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -494,6 +548,150 @@ const switchTab = (btn, pid) => {
   btn.classList.add('active');
   $(pid)?.classList.add('active');
 };
+
+// ── P0 智能分析：钩子/BGM/卡点/算法评分 ──
+let _p0State = null;
+
+async function runP0Analysis() {
+  if (!transcribeJobId && !transcribeFile) {
+    toast('请先上传视频', 'error');
+    switchTab(document.querySelector('.tab[onclick*="tabSpeech"]'), 'tabSpeech');
+    return;
+  }
+  const btn = $('btnRunP0');
+  if (btn) { btn.disabled = true; btn.textContent = '分析中...'; }
+  $('p0Status').textContent = '';
+  $('p0Result').style.display = '';
+  try {
+    const payload = { job_id: transcribeJobId };
+    // 1. 钩子分析
+    $('p0Status').textContent = '正在分析前3秒钩子...';
+    const hook = await postJSON('/api/hook-analysis', payload, 180000);
+    if (hook.error) throw new Error(hook.error);
+    renderP0Hook(hook);
+    // 2. BGM 分析
+    $('p0Status').textContent = '正在分析 BGM 节奏...';
+    const bgm = await postJSON('/api/bgm-analysis', payload, 300000);
+    if (bgm.error) throw new Error(bgm.error);
+    renderP0Bgm(bgm);
+    // 3. 卡点分析（带 BGM 节拍）
+    $('p0Status').textContent = '正在分析剪辑卡点...';
+    const rhythm = await postJSON('/api/rhythm-analysis', {
+      job_id: transcribeJobId, beat_times: bgm.beat_times || []
+    }, 300000);
+    if (rhythm.error) throw new Error(rhythm.error);
+    renderP0Rhythm(rhythm);
+    // 4. 算法评分（规则层）
+    $('p0Status').textContent = '正在计算算法评分...';
+    const algo = await postJSON('/api/algorithm-score', {
+      job_id: transcribeJobId, use_llm: false,
+      hook_analysis: hook, bgm_analysis: bgm, rhythm_analysis: rhythm
+    }, 60000);
+    if (algo.error) throw new Error(algo.error);
+    renderP0Algo(algo);
+    $('p0Status').textContent = '✓ 分析完成';
+    _p0State = { hook, bgm, rhythm, algo };
+  } catch (e) {
+    console.error('P0 analysis failed:', e);
+    $('p0Status').textContent = '✗ 分析失败: ' + e.message;
+    toast('智能分析失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '&#9889; 一键智能分析'; }
+  }
+}
+
+function renderP0Hook(h) {
+  $('p0HookType').textContent = (h.hook_type_name || h.hook_type || 'unknown') + ' (置信度 ' + Math.round((h.hook_confidence||0)*100) + '%)';
+  $('p0HookScore').textContent = (h.strength_score ?? '-') + ' / 100';
+  $('p0HookGrade').textContent = h.strength_grade || '';
+  const meta = [];
+  if (h.first_sentence) meta.push('开场首句：' + h.first_sentence);
+  if (h.first_face_appearance != null) meta.push('人物出镜：' + h.first_face_appearance + 's 出镜率 ' + Math.round((h.face_appearance_rate||0)*100) + '%');
+  else meta.push('人物出镜：全程未检测到人脸');
+  if (h.audio_peak_time != null) meta.push('音频峰值：' + h.audio_peak_time + 's');
+  $('p0HookMeta').textContent = meta.join(' · ');
+  $('p0HookSuggest').innerHTML = (h.suggestions || []).map(s => '&#128161; ' + s).join('<br>');
+}
+
+function renderP0Bgm(b) {
+  const parts = [
+    '存在BGM：' + (b.has_bgm ? '是 (置信度 ' + Math.round((b.bgm_confidence||0)*100) + '%)' : '否'),
+    'BPM：' + (b.bpm || '--'),
+    '风格：' + (b.bgm_style || '--'),
+    '节拍数：' + (b.beat_count || 0),
+    '节奏评分：' + (b.rhythm_score ?? '-') + '/100',
+    '能量峰值：' + (b.energy_peak_time ?? '-') + 's',
+  ];
+  $('p0BgmInfo').textContent = parts.join(' · ');
+  // 绘制能量曲线
+  const curve = b.energy_curve || [];
+  const canvas = $('p0BgmCanvas');
+  if (canvas && curve.length > 1) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.clientWidth * 2 || 600;
+    const H = canvas.height = canvas.clientHeight * 2 || 120;
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath();
+    const step = curve.length > W ? curve.length / W : 1;
+    for (let x = 0; x < W; x++) {
+      const idx = Math.min(curve.length - 1, Math.floor(x * step));
+      const y = H - (curve[idx] / (Math.max(...curve) || 1)) * (H - 8) - 4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function renderP0Rhythm(r) {
+  const parts = [
+    '切镜：' + (r.cut_count ?? 0) + ' 次',
+    '频率：' + (r.cut_frequency ?? '--') + ' 次/分',
+    '模式：' + (r.cut_pattern || '--'),
+    '卡点同步率：' + Math.round((r.sync_rate||0)*100) + '%',
+    '节奏评分：' + (r.rhythm_score ?? '-') + '/100',
+    r.is_beat_synced ? '&#9989; 是卡点视频' : '&#10060; 非卡点视频',
+  ];
+  $('p0RhythmInfo').innerHTML = parts.join('<br>');
+  $('p0RhythmSuggest').innerHTML = (r.suggestions || []).map(s => '&#128161; ' + s).join('<br>');
+}
+
+function renderP0Algo(a) {
+  $('p0AlgoScore').textContent = a.total_score ?? '-';
+  const info = ['等级：' + (a.grade || '--')];
+  const comp = a.compliance || {};
+  const riskCount = (comp.absolute_words||[]).length + (comp.medical_words||[]).length + (comp.external_link_words||[]).length;
+  info.push('合规风险：' + (comp.risk_level || 'low') + (riskCount ? ' (' + riskCount + ' 处)' : ''));
+  if (a.traffic_pool_prediction) info.push('流量池预测：' + a.traffic_pool_prediction);
+  $('p0AlgoInfo').innerHTML = info.join('<br>');
+  const risks = [];
+  (comp.absolute_words||[]).forEach(w => risks.push('绝对词「' + w + '」'));
+  (comp.medical_words||[]).forEach(w => risks.push('医疗词「' + w + '」'));
+  (comp.external_link_words||[]).forEach(w => risks.push('外链词「' + w + '」'));
+  const suggests = [];
+  if (risks.length) suggests.push('&#9888; 合规风险词：' + risks.join('、'));
+  (a.optimization_suggestions || []).forEach(s => suggests.push('&#128161; ' + s));
+  $('p0AlgoSuggest').innerHTML = suggests.join('<br>') || '&#128161; 无风险词，算法友好度良好';
+}
+
+async function postJSON(url, body, timeout = 60000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const resp = await fetch(TRANSCRIBE_BASE + url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const data = await resp.json();
+    if (resp.status >= 400 && data.error) throw new Error(data.error);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const COLOR_RGB = {
   '红色':'#f87171','橙色':'#fb923c','黄色':'#fbbf24','绿色':'#4ade80',
