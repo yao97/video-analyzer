@@ -1,6 +1,6 @@
 # Video Content Analyzer (VCA)
 
-短视频竞品反向拆解工具 — 上传视频 → Whisper 转写 → LLM 深度分析 → 九节结构化报告（含分镜头表、文案拆解、爆款文案库）。
+短视频竞品反向拆解工具 — 上传视频 → Qwen3-ASR 语音转写 → LLM 深度分析 → 九节结构化报告（含分镜头表、文案拆解、爆款文案库）。
 
 ## 架构
 
@@ -15,7 +15,7 @@
 ├── frontend/
 │   ├── web_player.html        # 前端唯一真相源（服务直接 serve 此文件）
 │   └── chart.umd.min.js       # 图表库
-├── Dockerfile                 # Docker 镜像（Flask + Whisper + ffmpeg）
+├── Dockerfile                 # Docker 镜像（Flask + ffmpeg）
 ├── docker-compose.yml         # 单体 API + 可选 Ollama
 ├── .dockerignore
 ├── .env.example               # 部署环境变量
@@ -23,16 +23,14 @@
 └── archive/                   # 旧版参考（已归档）
 ```
 
-## 语音识别引擎（双引擎可选）
+## 语音识别引擎（Qwen3-ASR-1.7B）
 
-上传视频后**先提取音频，不自动转写**；在"语音转写"Tab 选择识别引擎后点击「开始转写」。
+上传视频后**先提取音频，不自动转写**；音频就绪后点击「开始转写」由 **Qwen3-ASR-1.7B 本地大模型**识别，输出带字级时间戳的分段（ForceAligner 对齐）。
 
-| 引擎 | 说明 | 硬件 | 时间戳 |
-|------|------|------|--------|
-| **Whisper**（默认） | openai-whisper，tiny/base/small/medium 四档 | CPU | ✅ 句子级 |
-| **Qwen3-ASR-1.7B** | 本地大模型，中英混合/方言识别更强 | GPU（DirectML+Vulkan）或 CPU | ✅ 字级（ForceAligner 对齐） |
+- 硬件：GPU（DirectML + Vulkan）或 CPU；RTX 3050 上 52s 音频约 4 秒转写（RTF 0.077）
+- 识别准确度可调：环境变量 `QWEN3_ASR_CONTEXT`（热词提示，默认含直播带货领域词）/ `QWEN3_ASR_TEMPERATURE`（采样温度，默认 0.3，越低越保守）
 
-### Qwen3-ASR-1.7B 部署（可选）
+### Qwen3-ASR-1.7B 部署
 
 1. 安装依赖：`pip install onnxruntime-directml pydub scipy gguf srt`
 2. 克隆引擎：`git clone https://github.com/HaujetZhao/Qwen3-ASR-GGUF.git backend/qwen3_asr_gguf_src`
@@ -41,9 +39,7 @@
    - `Qwen3-ForceAligner-0.6B-gguf.zip`（481MB，时间戳必需）
 4. 下载 llama.cpp Windows Vulkan 二进制，解压 DLL 到 `backend/qwen3_asr_gguf_src/qwen_asr_gguf/inference/bin/`
    - ⚠️ 用 **b8996** 版本（最新版 b10229+ 与引擎不兼容，会 access violation）
-5. 重启服务，前端引擎下拉选择 Qwen3-ASR 即可
-
-> 引擎首次运行加载模型约 5-10 秒；RTX 3050 上 52s 音频约 4 秒转写（RTF 0.077）。
+5. 重启服务即可（引擎默认固定 Qwen3-ASR）
 
 ## 本地运行（不装 Docker）
 
@@ -67,7 +63,7 @@ python transcribe_server.py --host 0.0.0.0 --port 8766 --model small
 
 ```bash
 cp .env.example .env
-# 编辑 .env：填 LLM_API_KEY、选 LLM_PROVIDER、WHISPER_MODEL 等
+# 编辑 .env：填 LLM_API_KEY、选 LLM_PROVIDER、QWEN3_ASR_CONTEXT 等
 ```
 
 ### 2. 构建并启动（仅 API）
@@ -77,8 +73,7 @@ docker compose up -d --build
 ```
 
 - 访问 `http://<服务器IP>:8766/`
-- Whisper 模型首次运行自动下载，缓存在 `whisper-models` 卷，重启不重复下载
-- 默认 `WHISPER_MODEL=small`（约 460MB），内存紧张改 `tiny`
+- 语音识别引擎为 Qwen3-ASR-1.7B（模型文件需手动放入 `backend/qwen3_asr_models/`，见上文部署章节）
 
 ### 3. 启用 Ollama 本地 LLM（可选）
 
@@ -115,8 +110,8 @@ docker compose down -v          # 停止并清空数据（模型需重新下载�
 
 ## 已知问题与注意事项
 
-- **一次只转写一个视频**：并发上传多个视频可能触发 Whisper 模型实例加载竞争导致进程卡死（已定位，建议串行使用）
-- Whisper `small` 模型推理约需 1.5-2GB 内存，Docker 默认限 4g
+- **一次只转写一个视频**：Qwen3-ASR 引擎实例较重，已强制串行（排队等待）
+- Qwen3-ASR 推理约需 2-3GB 内存（GPU 显存 ~1.6GB + 系统内存），Docker 默认限 4g
 - 深度分析九节报告生成较长（含大量表格），Ollama 已配置 `num_predict=8192` 防截断
 
 ## 文档

@@ -2,9 +2,9 @@
 
 Video Content Analyzer - Python Backend
 
-功能：音频提取 + Whisper 语音转写（分片真实进度，无需系统 ffmpeg）
+功能：音频提取 + Qwen3-ASR-1.7B 语音转写（本地大模型，GPU DirectML+Vulkan）
 
-依赖：whisper / imageio-ffmpeg / flask / soundfile / numpy
+依赖：imageio-ffmpeg / flask / soundfile / numpy / onnxruntime-directml
 
 启动：python transcribe_server.py
 
@@ -49,33 +49,19 @@ import zhconv  # 繁体→简体转换
 
 # ── 懒加载 ──
 
-_whisper_models = {}  # key "model_name#instance_id" -> model instance
-_whisper_model_lock = threading.Lock()
-_whisper_model_name = "small"  # default, overridden by --model arg
 _ffmpeg_exe = None
 _qwen3_asr_gguf_engine = None  # Qwen3-ASR GGUF 引擎实例（懒加载）
+_qwen3_asr_lock = threading.Lock()  # Qwen3-ASR 引擎初始化锁
 
-# 并发转写信号量：限制同时进行的转写任务数。
-# 多任务并发会触发多个 Whisper 实例同时推理，torch 底层线程竞争导致部分分片
-# 解码失败（KeyError: Linear / cannot reshape），丢转写内容。
-# 实测：2 任务并发 → 每个任务各丢一半分片。因此强制串行（=1）。
-# 注意：单任务内部仍使用多线程分片并行（已验证安全，52s 视频约 35s）。
+# 并发转写信号量：Qwen3-ASR 引擎实例较重，强制串行（一次一个转写任务）
 MAX_CONCURRENT_TRANSCRIBE = 1
 _transcribe_semaphore = threading.Semaphore(MAX_CONCURRENT_TRANSCRIBE)
-
-# 可选模型列表（前端下拉框用）
-WHISPER_MODEL_CHOICES = [
-    ("tiny", "Tiny — 最快(约5x)，适合快速预览"),
-    ("base", "Base — 快速(约3x)，平衡速度与质量"),
-    ("small", "Small — 默认，中文识别较好"),
-    ("medium", "Medium — 最慢但最准确"),
-]
 
 
 
 def get_ffmpeg():
 
-    """获取 imageio-ffmpeg 自带的 ffmpeg 路径（用于音频提取，不用于 Whisper）"""
+    """获取 imageio-ffmpeg 自带的 ffmpeg 路径（用于音频提取）"""
 
     global _ffmpeg_exe
 
@@ -97,43 +83,7 @@ def get_ffmpeg():
 
 
 
-def get_whisper_model(model_name=None, instance_id=0, num_threads=None):
 
-    """懒加载 Whisper 模型，支持多模型缓存和并行实例"""
-
-    global _whisper_models
-
-    if model_name is None:
-
-        model_name = _whisper_model_name
-
-    key = f"{model_name}#{instance_id}"
-
-    if key not in _whisper_models:
-
-        with _whisper_model_lock:
-
-            if key not in _whisper_models:
-
-                import whisper
-
-                if num_threads is not None:
-                    try:
-                        import torch
-                        torch.set_num_threads(num_threads)
-                        print(f"[Whisper] torch 线程数设为 {num_threads}")
-                    except Exception:
-                        pass
-
-                print(f"[Whisper] 加载 {model_name} 模型 (实例 {instance_id})...")
-
-                t0 = time.time()
-                _whisper_models[key] = whisper.load_model(model_name, device="cpu")
-                t1 = time.time()
-
-                print(f"[Whisper] {model_name} 加载完成 (实例 {instance_id}, 耗时 {t1-t0:.1f}s, 总缓存: {len(_whisper_models)})")
-
-    return _whisper_models[key]
 
 
 
@@ -302,313 +252,6 @@ def extract_audio(video_path: str, wav_path: str, duration: float) -> bool:
 
 
 
-# ── 分片转写（真实进度，无需系统 ffmpeg）──
-
-CHUNK_SECONDS = 15.0  # 每段 15 秒（平衡并行度与调度开销）
-
-
-
-def transcribe_audio_chunked(wav_path: str, duration: float, job_id: str, model_name: str = None):
-
-    """
-
-    将 WAV 用 soundfile 读取为 numpy 数组，按时间分片，
-
-    并行传给 model.transcribe(audio=array)，每段完成后更新真实进度。
-
-    返回标准 transcript dict: {text, language, segments}
-
-    """
-
-    import numpy as np
-
-    import soundfile as sf
-
-    import queue as queue_mod
-
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-
-
-    if model_name is None:
-
-        model_name = _whisper_model_name
-
-
-
-    # 用 soundfile 读取 WAV（绕过 Whisper 的 load_audio → ffmpeg 调用）
-    try:
-        data, sr = sf.read(wav_path)
-    except Exception as re:
-        raise RuntimeError(f"音频解码失败：WAV 无法读取（可能音频格式不支持或文件损坏）: {re}")
-
-    if len(data.shape) > 1:
-
-        data = data.mean(axis=1)  # 立体声转单声道
-
-    assert sr == 16000, f"采样率应为 16000，实际为 {sr}"
-
-    total_samples = len(data)
-
-    total_duration = total_samples / sr
-
-
-
-    # 计算分片数
-
-    chunk_samples = int(sr * CHUNK_SECONDS)
-
-    n_chunks = max(1, (total_samples + chunk_samples - 1) // chunk_samples)
-
-
-
-    print(f"[Transcribe] 并行分片转写: {n_chunks} 段, 总长 {total_duration:.1f}s, 模型={model_name}")
-
-
-
-    # 预切分所有分片
-
-    chunks_info = []
-
-    for chunk_idx in range(n_chunks):
-
-        start_sample = chunk_idx * chunk_samples
-
-        end_sample = min(start_sample + chunk_samples, total_samples)
-
-        chunk_data = data[start_sample:end_sample].astype(np.float32)
-
-        start_sec = start_sample / sr
-
-        end_sec = end_sample / sr
-
-        if len(chunk_data) < sr * 0.5:
-
-            print(f"[Chunk {chunk_idx+1}] 音频段过短（{len(chunk_data)/sr:.2f}s），跳过")
-
-            continue
-
-        chunks_info.append((chunk_idx, chunk_data, start_sec, end_sec))
-
-
-
-    n_valid = len(chunks_info)
-
-    # 检测 CPU 核心数
-    try:
-        import multiprocessing as mp
-        cpu_count = mp.cpu_count()
-    except Exception:
-        cpu_count = 8
-
-    # 并行度决策：tiny/base 用 3 线程，small 用 2 线程，medium 用 1 线程
-    if model_name in ("tiny", "base"):
-        max_workers = min(n_valid, 3)
-    elif model_name == "small":
-        max_workers = min(n_valid, 2)
-    else:
-        max_workers = 1
-
-    # 智能降级：仅 1 段时用单线程（多实例加载开销不值得）
-    if n_valid <= 1:
-        max_workers = 1
-
-    # 动态计算每个 worker 的 torch 线程数，避免超额订阅
-    threads_per_worker = max(1, cpu_count // max_workers) if max_workers > 0 else cpu_count
-
-    print(f"[Transcribe] 并行度: {max_workers} 线程, {n_valid} 个有效分片, "
-          f"CPU={cpu_count}核, torch={threads_per_worker}线程/worker, "
-          f"总线程={max_workers * threads_per_worker}")
-
-
-
-    # 模型实例池（每个线程用独立实例，避免线程安全问题）
-
-    model_pool = queue_mod.Queue()
-
-    for i in range(max_workers):
-
-        if i == 0:
-            jobs[job_id]["progress"] = 18
-            jobs[job_id]["detail"] = f"正在加载 Whisper 模型（{model_name}，实例 {i+1}/{max_workers}）..."
-
-        model_pool.put(get_whisper_model(model_name, i, num_threads=threads_per_worker))
-
-    jobs[job_id]["progress"] = 22
-    jobs[job_id]["detail"] = f"模型加载完成，开始转写 {n_valid} 个分片（{max_workers} 线程并行）..."
-
-
-
-    # 单段转写函数（从池中取模型，用完归还）
-
-    def _transcribe_one(c_idx, c_data, c_start, c_end):
-
-        try:
-            # 取模型加超时：防止模型实例加载失败导致池空时无限等待（死锁）
-            m = model_pool.get(timeout=120)
-        except queue_mod.Empty:
-            print(f"[Chunk {c_idx+1}] 等待模型超时（120s），跳过该分片", flush=True)
-            return c_idx, {"text": "", "segments": []}
-
-        try:
-
-            print(f"[Chunk {c_idx+1}/{n_valid}] 开始转写: {c_start:.0f}s-{c_end:.0f}s, 时长={len(c_data)/sr:.1f}s", flush=True)
-
-            result = m.transcribe(
-
-                c_data,
-
-                language="zh",
-
-                task="transcribe",
-
-                verbose=False,
-
-                word_timestamps=False,
-
-                fp16=False,
-
-            )
-
-            print(f"[Chunk {c_idx+1}] 完成: '{result.get('text','')[:50]}...'", flush=True)
-
-            return c_idx, result
-
-        except Exception as e:
-
-            print(f"[Chunk {c_idx+1}] 转写失败: {e}", flush=True)
-
-            import traceback; traceback.print_exc()
-
-            return c_idx, {"text": "", "segments": []}
-
-        finally:
-
-            model_pool.put(m)  # 归还模型实例
-
-
-
-    # 并行执行
-
-    results = {}
-
-    completed = 0
-
-    t_transcribe_start = time.time()
-
-    if max_workers <= 1:
-
-        # 顺序模式（medium 模型或单分片）
-
-        for c_idx, c_data, c_start, c_end in chunks_info:
-
-            jobs[job_id]["current_chunk"] = f"第 {c_idx+1}/{n_valid} 段 ({c_start:.0f}s-{c_end:.0f}s)"
-
-            jobs[job_id]["detail"] = f"正在转写第 {c_idx+1}/{n_valid} 段 ({c_start:.0f}s-{c_end:.0f}s)..."
-
-            progress = 25.0 + (completed / n_valid) * 50.0
-
-            jobs[job_id]["progress"] = round(progress, 1)
-
-            r_idx, r_result = _transcribe_one(c_idx, c_data, c_start, c_end)
-
-            results[r_idx] = (r_result, c_start)
-
-            completed += 1
-
-            progress = 25.0 + (completed / n_valid) * 50.0
-
-            jobs[job_id]["progress"] = round(progress, 1)
-
-            jobs[job_id]["detail"] = f"已完成 {completed}/{n_valid} 段"
-
-    else:
-
-        # 并行模式
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-
-            future_map = {}
-
-            for c_idx, c_data, c_start, c_end in chunks_info:
-
-                future = executor.submit(_transcribe_one, c_idx, c_data, c_start, c_end)
-
-                future_map[future] = (c_idx, c_start)
-
-            for future in as_completed(future_map):
-
-                c_idx, c_start = future_map[future]
-
-                r_idx, r_result = future.result()
-
-                results[r_idx] = (r_result, c_start)
-
-                completed += 1
-
-                progress = 25.0 + (completed / n_valid) * 50.0
-
-                jobs[job_id]["progress"] = round(progress, 1)
-
-                jobs[job_id]["current_chunk"] = f"已完成 {completed}/{n_valid} 段"
-
-                jobs[job_id]["detail"] = f"已完成 {completed}/{n_valid} 段"
-
-                print(f"[Progress] {completed}/{n_valid} 完成, progress={progress:.0f}%")
-
-
-
-    t_transcribe_end = time.time()
-    print(f"[Transcribe] 转写阶段耗时: {t_transcribe_end - t_transcribe_start:.1f}s "
-          f"({n_valid} 段, {max_workers} 线程, 平均 {((t_transcribe_end - t_transcribe_start) / max(n_valid, 1)):.1f}s/段)")
-
-
-
-    # 合并结果（按原始顺序）
-
-    all_segments = []
-
-    all_texts = []
-
-    for c_idx in sorted(results.keys()):
-
-        result, start_sec = results[c_idx]
-
-        for seg in result.get("segments", []):
-
-            text = seg.get("text", "").strip()
-
-            if text:
-
-                all_segments.append({
-
-                    "start": round(seg.get("start", 0) + start_sec, 2),
-
-                    "end":   round(seg.get("end", 0) + start_sec, 2),
-
-                    "text":  text,
-
-                })
-
-        all_texts.append(result.get("text", "").strip())
-
-
-
-    full_text = " ".join(t for t in all_texts if t)
-
-    print(f"[Transcribe] 完成: {len(all_segments)} 段, 文本长度 {len(full_text)}")
-
-
-
-    return {
-
-        "text": full_text,
-
-        "language": "zh",
-
-        "segments": all_segments,
-
-    }
 
 
 
@@ -839,8 +482,8 @@ def run_audio_extract(job_id: str, video_path: str, duration: float):
         jobs[job_id]["progress"] = 100
 
 
-def run_transcribe_with_engine(job_id: str, engine: str = "whisper", model_name: str = None):
-    """第二步：用户选择识别引擎后启动转写。engine: whisper / qwen3_asr。"""
+def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_name: str = None):
+    """用户选择识别引擎后启动转写。当前仅支持 Qwen3-ASR（Whisper 已移除）。"""
 
     # 并发限制：Whisper 多实例并发不安全，强制串行（Qwen3-ASR 同样串行避免显存竞争）
     if _transcribe_semaphore.acquire(blocking=False):
@@ -860,16 +503,12 @@ def run_transcribe_with_engine(job_id: str, engine: str = "whisper", model_name:
         duration = job.get("duration", 60.0)
         video_path = job.get("video_path", "")
 
-        if engine == "qwen3_asr":
-            jobs[job_id]["status"] = "transcribing"
-            jobs[job_id]["progress"] = 15
-            jobs[job_id]["detail"] = "正在加载 Qwen3-ASR 模型..."
-            transcript = transcribe_qwen3_asr(wav_path, job_id, model_name=model_name)
-        else:
-            jobs[job_id]["status"] = "transcribing"
-            jobs[job_id]["progress"] = 15
-            jobs[job_id]["detail"] = f"音频提取完成，正在加载 Whisper 模型（{model_name or _whisper_model_name}）..."
-            transcript = transcribe_audio_chunked(wav_path, duration, job_id, model_name=model_name)
+        if engine != "qwen3_asr":
+            engine = "qwen3_asr"  # Whisper 已移除，强制使用 Qwen3-ASR
+        jobs[job_id]["status"] = "transcribing"
+        jobs[job_id]["progress"] = 15
+        jobs[job_id]["detail"] = "正在加载 Qwen3-ASR 模型..."
+        transcript = transcribe_qwen3_asr(wav_path, job_id, model_name=model_name)
 
         jobs[job_id]["status"] = "analyzing"
         jobs[job_id]["progress"] = 80
@@ -940,7 +579,7 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
 
     # 懒加载引擎
     if _qwen3_asr_gguf_engine is None:
-        with _whisper_model_lock:
+        with _qwen3_asr_lock:
             if _qwen3_asr_gguf_engine is None:
                 print(f"[Qwen3-ASR] 初始化 GGUF 引擎（模型目录: {model_dir}）...", flush=True)
                 t0 = time.time()
@@ -1005,7 +644,7 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
     full_text = res.text or ""
     segments = []
     if res.alignment and len(res.alignment.items) > 0:
-        # 字级时间戳聚合为句子级分段（与 Whisper segments 结构一致）
+        # 字级时间戳聚合为句子级分段
         cur_text = ""
         cur_start = None
         cur_end = None
@@ -1057,15 +696,10 @@ def api_transcribe():
     except (TypeError, ValueError):
         duration = 60.0
 
-    # 模型选择（前端传来的 model 参数）
+    # 模型选择（兼容旧前端传参，固定 Qwen3-ASR）
+    model_name = request.form.get("model", "").strip().lower() or "Qwen/Qwen3-ASR-1.7B"
 
-    model_name = request.form.get("model", "").strip().lower()
-
-    if model_name not in [m[0] for m in WHISPER_MODEL_CHOICES]:
-
-        model_name = _whisper_model_name  # 默认
-
-    print(f"[Transcribe] 使用模型: {model_name}")
+    print(f"[Transcribe] 使用引擎: Qwen3-ASR ({model_name})")
 
 
 
@@ -1148,7 +782,7 @@ def api_transcribe():
 
 def api_transcribe_start():
 
-    """用户选择识别引擎后启动转写。engine: whisper / qwen3_asr"""
+    """启动 Qwen3-ASR 转写（Whisper 已移除，engine 参数仅兼容旧前端）"""
 
     try:
         body = request.get_json() or {}
@@ -1156,7 +790,7 @@ def api_transcribe_start():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     job_id = (body.get("job_id") or "").strip()
-    engine = (body.get("engine") or "whisper").strip().lower()
+    engine = (body.get("engine") or "qwen3_asr").strip().lower()
     model = (body.get("model") or "").strip() or None
 
     if not job_id or job_id not in jobs:
@@ -1166,8 +800,8 @@ def api_transcribe_start():
     if job.get("status") in ("transcribing", "analyzing", "done", "waiting"):
         return jsonify({"error": f"任务当前状态为 {job.get('status')}，无法重复启动"}), 400
 
-    if engine not in ("whisper", "qwen3_asr"):
-        return jsonify({"error": f"不支持的识别引擎: {engine}"}), 400
+    if engine != "qwen3_asr":
+        engine = "qwen3_asr"  # Whisper 已移除，强制 Qwen3-ASR
 
     print(f"[Transcribe-Start] job {job_id} 启动转写 engine={engine} model={model or '默认'}", flush=True)
     thread = threading.Thread(target=run_transcribe_with_engine, args=(job_id, engine, model), daemon=True)
@@ -1178,24 +812,6 @@ def api_transcribe_start():
         "status": "transcribing",
         "engine": engine,
         "message": f"已启动 {engine} 转写...",
-    })
-
-
-
-@app.route("/api/whisper-models", methods=["GET"])
-
-def api_whisper_models():
-
-    """返回可用的 Whisper 模型列表"""
-
-    return jsonify({
-
-        "models": WHISPER_MODEL_CHOICES,
-
-        "default": _whisper_model_name,
-
-        "cached": list(set(k.split("#")[0] for k in _whisper_models.keys())),
-
     })
 
 
@@ -1998,10 +1614,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0", help="监听地址")
 
     parser.add_argument("--port", type=int, default=8766, help="监听端口")
-
-    parser.add_argument("--model", default="small", choices=["tiny", "base", "small", "medium"], help="Whisper 模型")
     args = parser.parse_args()
-    _whisper_model_name = args.model
 
 
     print(f"""
@@ -2012,19 +1625,13 @@ if __name__ == "__main__":
 
 ║   转写服务  http://{args.host}:{args.port}                        ║
 
-║   转写模式  并行分片（ThreadPool + 多模型实例池）      ║
+║   识别引擎  Qwen3-ASR-1.7B（本地大模型，GPU DirectML+Vulkan）     ║
 
 ╚══════════════════════════════════════════════════════════════╝
 
-  Whisper 模型 : {args.model}（前端可选 tiny/base/small/medium）
-
   音频格式     : WAV 16kHz 单声道（soundfile 直读，不调 ffmpeg）
 
-  分片大小     : {CHUNK_SECONDS} 秒/段
-
-  并行度       : tiny/base=3线程, small=2线程, medium=1线程
-
-  依赖         : imageio-ffmpeg（音频提取）+ soundfile（Whisper 输入）
+  依赖         : imageio-ffmpeg（音频提取）+ onnxruntime-directml
 
 """)
 
