@@ -415,12 +415,38 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
             <div id="p0HookSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
           </div>
           <!-- 音频能量曲线（原 BGM 接口保留的价值数据） -->
-          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
             <div style="font-size:0.8rem;font-weight:700;color:#34d399;margin-bottom:0.5rem;">&#127925; 全片音频能量曲线</div>
             <div style="font-size:0.72rem;color:#6b7084;line-height:1.6;margin-bottom:0.4rem;">逐秒 RMS 能量，峰值时段即内容高潮/重点段</div>
             <div style="height:80px;background:#0d0f15;border-radius:6px;padding:0.4rem;overflow:hidden;">
               <canvas id="p0EnergyCanvas" style="width:100%;height:100%;"></canvas>
             </div>
+          </div>
+          <!-- 视觉锚点卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#f472b6;margin-bottom:0.5rem;">&#128293; 视觉锚点（最炸画面）</div>
+            <div style="font-size:0.76rem;color:#d1d5db;line-height:1.8;" id="p0AnchorInfo">-</div>
+            <div id="p0AnchorSuggest" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;padding:0.5rem 0.6rem;background:#0f1117;border-radius:6px;"></div>
+          </div>
+          <!-- 信息密度卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="font-size:0.8rem;font-weight:700;color:#fbbf24;margin-bottom:0.5rem;">&#128202; 画面信息密度</div>
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
+              <div style="text-align:center;">
+                <div id="p0DensityPct" style="font-size:1.5rem;font-weight:800;color:#fbbf24;">-</div>
+                <div style="font-size:0.62rem;color:#6b7084;">有效信息占比</div>
+              </div>
+              <div id="p0DensityInfo" style="font-size:0.76rem;color:#d1d5db;line-height:1.8;">-</div>
+            </div>
+            <div id="p0DensityBlank" style="font-size:0.72rem;color:#d1d5db;line-height:1.7;margin-top:0.3rem;"></div>
+          </div>
+          <!-- OCR 字幕卡片 -->
+          <div style="padding:0.9rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;margin-bottom:0.7rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+              <div style="font-size:0.8rem;font-weight:700;color:#60a5fa;">&#128221; 字幕/花字 OCR</div>
+              <span id="p0OcrBadge" style="font-size:0.68rem;color:#6b7084;"></span>
+            </div>
+            <div id="p0OcrList" style="font-size:0.74rem;color:#d1d5db;line-height:1.8;max-height:200px;overflow-y:auto;"></div>
           </div>
         </div>
       </div>
@@ -546,13 +572,29 @@ async function runP0Analysis() {
   $('p0Result').style.display = '';
   try {
     const payload = { job_id: transcribeJobId };
+    // 1. 钩子分析
     $('p0Status').textContent = '正在分析前3秒钩子...';
     const hook = await postJSON('/api/hook-analysis', payload, 180000);
     if (hook.error) throw new Error(hook.error);
     renderP0Hook(hook);
     renderP0Energy(hook.energy_curve || []);
+    // 2. OCR（字幕/花字）
+    $('p0Status').textContent = '正在 OCR 识别字幕花字...';
+    let ocr = { available: false };
+    try { ocr = await postJSON('/api/ocr-analysis', payload, 300000); } catch (e) { ocr = { available: false, error: e.message }; }
+    renderP0Ocr(ocr);
+    // 3. 信息密度（带 OCR 结果）
+    $('p0Status').textContent = '正在计算信息密度...';
+    const density = await postJSON('/api/info-density', {
+      job_id: transcribeJobId, ocr_results: ocr.available ? ocr : null
+    }, 60000);
+    if (!density.error) renderP0Density(density);
+    // 4. 视觉锚点
+    $('p0Status').textContent = '正在定位视觉锚点...';
+    const anchor = await postJSON('/api/visual-anchor', payload, 180000);
+    if (!anchor.error) renderP0Anchor(anchor);
     $('p0Status').textContent = '✓ 分析完成';
-    _p0State = { hook };
+    _p0State = { hook, ocr, density, anchor };
   } catch (e) {
     console.error('P0 analysis failed:', e);
     $('p0Status').textContent = '✗ 分析失败: ' + e.message;
@@ -573,6 +615,49 @@ function renderP0Hook(h) {
   if (h.audio_peak_time != null) meta.push('音频峰值：' + h.audio_peak_time + 's');
   $('p0HookMeta').textContent = meta.join(' · ');
   $('p0HookSuggest').innerHTML = (h.suggestions || []).map(s => '&#128161; ' + s).join('<br>');
+}
+
+function renderP0Ocr(ocr) {
+  const badge = $('p0OcrBadge');
+  const list = $('p0OcrList');
+  if (!ocr.available) {
+    if (badge) badge.textContent = '⚠ ' + (ocr.error || '不可用');
+    if (list) list.textContent = 'OCR 未执行（首次运行需下载模型约 50MB）';
+    return;
+  }
+  if (badge) badge.textContent = ocr.total_text_count + ' 条文字 · ' + ocr.subtitle_count + ' 字幕 · ' + ocr.decoration_count + ' 花字';
+  if (!list) return;
+  const items = (ocr.subtitle_timeline || []).slice(0, 30);
+  if (!items.length) { list.textContent = '未检测到字幕/花字'; return; }
+  list.innerHTML = items.map(it =>
+    '<div style="padding:0.25rem 0;border-bottom:1px solid #1e2130;"><span style="color:#60a5fa;font-weight:600;">' +
+    it.timestamp + 's</span> <span style="color:#d1d5db;">' + (it.texts || []).join(' / ') + '</span></div>'
+  ).join('');
+}
+
+function renderP0Density(d) {
+  $('p0DensityPct').textContent = Math.round((d.info_density || 0) * 100) + '%';
+  const info = ['评分：' + (d.density_score ?? '-') + '/100 · 等级：' + (d.grade || '-')];
+  if (d.sell_point && d.sell_point.first_time != null) {
+    info.push('卖点首次出现：第 ' + d.sell_point.first_time + 's' +
+      (d.sell_point.warning ? ' &#9888; 超过8秒，建议前置!' : ' ✓'));
+  } else {
+    info.push('未检测到价格/卖点信息');
+  }
+  $('p0DensityInfo').innerHTML = info.join('<br>');
+  const blank = $('p0DensityBlank');
+  const segs = d.blank_segments || [];
+  if (segs.length) {
+    blank.innerHTML = '<div style="color:#f87171;margin-bottom:0.2rem;">&#9888; 空白段（建议缩短或加花字）：</div>' +
+      segs.map(s => '第 ' + s.start + '-' + s.end + ' 秒（' + s.duration + 's 无新信息）').join('<br>');
+  } else {
+    blank.textContent = '✓ 无空白段，节奏紧凑';
+  }
+}
+
+function renderP0Anchor(a) {
+  $('p0AnchorInfo').textContent = '全片视觉最炸画面：第 ' + (a.anchor_time ?? '-') + ' 秒 · 类型：' + (a.anchor_type || '-') + ' · 强度 ' + (a.anchor_score ?? '-') + '/100';
+  $('p0AnchorSuggest').innerHTML = '&#128293; ' + (a.suggestion || '');
 }
 
 function renderP0Energy(curve) {

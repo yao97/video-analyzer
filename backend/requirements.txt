@@ -21,8 +21,11 @@ scipy>=1.10.0
 gguf>=0.10.0
 srt>=3.5.0
 
-# ── P0 智能分析（钩子/BGM/卡点/算法评分） ──
+# ── P0 智能分析（钩子/视觉锚点/能量曲线） ──
 librosa>=0.10.0
 mediapipe>=0.10.14
 opencv-python>=4.8.0
-scenedetect>=0.6.4
+
+# ── P1 智能分析（字幕/花字 OCR） ──
+paddlepaddle>=3.0.0
+paddleocr>=2.8.0

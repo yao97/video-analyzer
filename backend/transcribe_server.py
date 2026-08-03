@@ -1636,6 +1636,103 @@ def api_hook_analysis():
 
 
 
+
+# ── P1 升级功能：OCR / 信息密度 / 视觉锚点 ──
+# 由 p1_analysis 模块提供实现（延迟 import，缺依赖时返回错误而非崩溃）
+
+
+@app.route("/api/ocr-analysis", methods=["POST"])
+def api_ocr_analysis():
+    """P1-1 字幕/花字 OCR"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+    sample_fps = int(body.get("sample_fps", 2) or 2)
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    try:
+        from p1_analysis import analyze_ocr
+        result = analyze_ocr(vpath, sample_fps=sample_fps)
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"OCR 分析失败: {e}"}), 500
+
+
+@app.route("/api/info-density", methods=["POST"])
+def api_info_density():
+    """P1-2 画面信息密度"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    # 取 job 上下文（转写/OCR 结果，若有）
+    duration = body.get("duration")
+    if duration is None and job_id in jobs:
+        duration = jobs[job_id].get("duration")
+
+    asr_text = ""
+    asr_segments = None
+    if job_id in jobs and jobs[job_id].get("result"):
+        res = jobs[job_id]["result"]
+        asr_text = res.get("text", "") or ""
+        asr_segments = res.get("segments")
+
+    ocr_results = body.get("ocr_results")
+
+    try:
+        from p1_analysis import analyze_info_density
+        result = analyze_info_density(
+            duration=duration,
+            ocr_results=ocr_results,
+            asr_text=asr_text,
+            asr_segments=asr_segments,
+        )
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"信息密度分析失败: {e}"}), 500
+
+
+@app.route("/api/visual-anchor", methods=["POST"])
+def api_visual_anchor():
+    """P1-3 视觉锚点"""
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    job_id = (body.get("job_id") or "").strip()
+    video_path = (body.get("video_path") or "").strip()
+
+    vpath, err = _resolve_video(job_id, video_path)
+    if err:
+        return jsonify({"error": err}), 404
+
+    try:
+        from p1_analysis import analyze_visual_anchor
+        result = analyze_visual_anchor(vpath)
+        return jsonify(result)
+    except ImportError as ie:
+        return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"视觉锚点分析失败: {e}"}), 500
+
+
 # ── 启动 ──
 
 if __name__ == "__main__":
