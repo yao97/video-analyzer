@@ -18,7 +18,13 @@ import re
 import json
 import math
 import time
+import threading
 import numpy as np
+
+# P0 分析并发锁：MediaPipe 初始化 / ffmpeg 子进程 / OpenCV 读取在多线程并发时
+# 可能死锁（实测：并发 hook-analysis 曾导致服务进程卡死无响应）。
+# 强制串行执行分析，单次耗时通常在 10s 内，串行可接受。
+_analysis_lock = threading.Lock()
 
 # ============================================================
 # 工具函数
@@ -76,8 +82,12 @@ def extract_first_frames(video_path: str, seconds: float = 3.0, fps: int = 30) -
     sample_interval = max(1, int(round(video_fps / fps)))
     frames = []
     idx = 0
-    while len(frames) < max_frames:
+    # 安全上限：最多读 total 的 1.5 倍（防损坏视频 read() 死循环）
+    read_limit = max(max_frames * 2, int(total * 1.5), max_frames)
+    reads = 0
+    while len(frames) < max_frames and reads < read_limit:
         ret, frame = cap.read()
+        reads += 1
         if not ret:
             break
         if idx % sample_interval == 0:
@@ -338,6 +348,12 @@ def analyze_hook(video_path: str, asr_segments: list = None,
     """P0-1 前3秒黄金钩子综合分析（主入口）"""
     result = {"available": True}
     start_t = time.time()
+    with _analysis_lock:
+        return _analyze_hook_locked(video_path, asr_segments, asr_text, start_t)
+
+
+def _analyze_hook_locked(video_path: str, asr_segments, asr_text, start_t) -> dict:
+    result = {"available": True}
 
     # 1. 画面通道：抽前3秒帧
     frames = extract_first_frames(video_path, seconds=3.0, fps=30)
@@ -431,6 +447,10 @@ class BGMAnalyzer:
         self.sr = sr
 
     def analyze(self, audio_path: str, cut_points: list = None) -> dict:
+        with _analysis_lock:
+            return self._analyze_locked(audio_path, cut_points)
+
+    def _analyze_locked(self, audio_path: str, cut_points: list = None) -> dict:
         import librosa
         y, sr = librosa.load(audio_path, sr=self.sr, mono=True)
         duration = len(y) / sr
@@ -581,6 +601,10 @@ class RhythmAnalyzer:
     SYNC_THRESHOLD = 0.6
 
     def analyze(self, video_path: str, beat_times: list = None, sample_fps: int = 10) -> dict:
+        with _analysis_lock:
+            return self._analyze_locked(video_path, beat_times, sample_fps)
+
+    def _analyze_locked(self, video_path: str, beat_times: list = None, sample_fps: int = 10) -> dict:
         frames_data = self._compute_frame_diffs(video_path, sample_fps)
         if not frames_data or not frames_data.get("diffs"):
             return {"available": False, "error": "无法读取视频帧"}
@@ -634,8 +658,12 @@ class RhythmAnalyzer:
         prev_frame = None
         diffs, timestamps = [], []
         idx = 0
-        while True:
+        # 安全上限：防损坏视频 read() 死循环
+        read_limit = max(frame_count * 1.5, 3000)
+        reads = 0
+        while reads < read_limit:
             ret, frame = cap.read()
+            reads += 1
             if not ret:
                 break
             if idx % sample_interval == 0:
