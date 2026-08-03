@@ -43,6 +43,7 @@ qwen3_asr_gguf_src/**/bin/
 *.onnx
 *.gguf
 *.dll
+*.exe
 *.zip
 
 # ── Docker 本地覆盖 ──
