@@ -495,6 +495,8 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
           <div style="height:6px;background:#232636;border-radius:4px;overflow:hidden;margin-top:0.5rem;">
             <div id="deepProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:4px;transition:width 0.5s;"></div>
           </div>
+          <div id="deepProgressDetail" style="margin-top:0.6rem;color:#a5b4fc;font-size:0.74rem;min-height:1.1rem;"></div>
+          <div id="deepChapterList" style="margin-top:0.5rem;display:flex;flex-wrap:wrap;gap:0.35rem;"></div>
         </div>
         <div id="deepReportError" style="display:none;margin:1rem 0;font-size:0.8rem;color:#f87171;padding:0.9rem;background:#2d1515;border:1px solid #5c2a2a;border-radius:10px;line-height:1.7;"></div>
         <div id="deepReportContent" class="copy-analysis" style="display:none;max-height:70vh;overflow-y:auto;"></div>
@@ -1844,6 +1846,9 @@ async function doDeepAnalysis() {
   $('deepReportActions').style.display = 'none';
   $('deepBtnCancel').style.display = '';
   $('deepReportStatus').textContent = '';
+  $('deepProgressDetail').textContent = '';
+  $('deepChapterList').innerHTML = '';
+  window._deepChapters = [];
   setDeepProgress(5, '正在组装分析数据...');
 
   const payload = {
@@ -1897,7 +1902,15 @@ async function pollDeepAnalysis() {
     }
     if (data.status === 'analyzing' || data.status === 'starting') {
       const p = data.progress || 30;
-      setDeepProgress(p, '大模型正在生成拆解报告（' + p + '%）...');
+      const detail = data.detail || '';
+      $('deepProgressText').textContent = '大模型深度分析中 · ' + p + '%';
+      $('deepProgressBar').style.width = Math.min(100, Math.max(0, p)) + '%';
+      if (detail) {
+        $('deepProgressDetail').textContent = '📝 ' + detail;
+        renderDeepChapterChips(detail);
+      } else {
+        $('deepProgressDetail').textContent = '大模型正在生成拆解报告...';
+      }
     } else if (data.status === 'done') {
       clearInterval(deepAnalysisPollTimer);
       deepAnalysisPollTimer = null;
@@ -1941,6 +1954,26 @@ function renderDeepReport(md) {
 function setDeepProgress(p, text) {
   $('deepProgressBar').style.width = Math.min(100, Math.max(0, p)) + '%';
   $('deepProgressText').textContent = text || ('进度 ' + p + '%');
+}
+
+function renderDeepChapterChips(detail) {
+  if (!detail || !detail.includes('正在生成 · ')) return;
+  const label = detail.split('正在生成 · ')[1].trim();
+  if (!label) return;
+  window._deepChapters = window._deepChapters || [];
+  // 之前的章节标记为已完成
+  window._deepChapters.forEach(c => { c.done = true; });
+  const existing = window._deepChapters.find(c => c.label === label);
+  if (existing) { existing.done = false; }
+  else { window._deepChapters.push({ label, done: false }); }
+  const esc = s => s.replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  $('deepChapterList').innerHTML = window._deepChapters.map(c => {
+    const style = c.done
+      ? 'background:#16331f;border:1px solid #2a5a3a;color:#7ee0a0;'
+      : 'background:#2a2350;border:1px solid #5a4ab0;color:#c4b5fd;';
+    const mark = c.done ? '✓' : '▸';
+    return '<span style="font-size:0.66rem;padding:0.18rem 0.5rem;border-radius:20px;' + style + '">' + mark + ' ' + esc(c.label) + '</span>';
+  }).join('');
 }
 
 function showDeepError(msg) {

@@ -1165,9 +1165,57 @@ def api_video_meta():
 
 
 def call_llm_analyze(input_data_str, api_key=None, base_url=None, model_name=None,
-                     provider=None, ollama_base=None):
-    import requests
+                     provider=None, ollama_base=None, job_id=None):
+    import requests, re
     provider = (provider or "").strip().lower()
+
+    # ── 进度明细辅助：更新 analyze_jobs[job_id] 的 progress / detail ──
+    def _set_progress(p, detail=None):
+        if not job_id or job_id not in analyze_jobs:
+            return
+        analyze_jobs[job_id]["progress"] = max(
+            analyze_jobs[job_id].get("progress", 0), min(100, int(p))
+        )
+        if detail:
+            analyze_jobs[job_id]["detail"] = detail
+
+    def _cn2int(s):
+        """中文数字 → int，支持 一~九十九（报告节数足够）"""
+        d = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"零":0}
+        s = s.strip()
+        if s.isdigit():
+            return int(s)
+        if "十" in s:
+            parts = s.split("十")
+            left = d.get(parts[0], 1) if parts[0] else 1
+            right = d.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
+            return left * 10 + right
+        return d.get(s, 0)
+
+    # 预估总节数（一句总结 + 八节正文 = 9），动态上调
+    _total_sections = [9]
+    _seen_sections = []
+    _section_re = re.compile(r'(?:^|\n)###\s+(.+?)(?:\n|$)')
+    _num_re = re.compile(r'第\s*([一二三四五六七八九十零\d]+)\s*节')
+
+    def _update_chapter_progress(accumulated_text):
+        for m in _section_re.finditer(accumulated_text):
+            title = m.group(1).strip()
+            if not title or title in _seen_sections:
+                continue
+            _seen_sections.append(title)
+            nm = _num_re.search(title)
+            if nm:
+                n = _cn2int(nm.group(1))
+                if n > _total_sections[0]:
+                    _total_sections[0] = n
+                p = 30 + (n / _total_sections[0]) * 60
+                stage = f"第{nm.group(1)}节 · {title.split('·',1)[-1].strip()}"
+            else:
+                p = 30 + (len(_seen_sections) / _total_sections[0]) * 60
+                stage = title
+            _set_progress(p, "正在生成 · " + stage)
+    _set_progress(30, "准备调用模型生成报告...")
     # 前端传入的 key 优先，否则读环境变量
     api_key = api_key or os.environ.get("LLM_API_KEY", "")
     base_url = base_url or os.environ.get("LLM_BASE_URL", "")
@@ -1269,37 +1317,67 @@ def call_llm_analyze(input_data_str, api_key=None, base_url=None, model_name=Non
             ollama_base or os.environ.get("OLLAMA_BASE", "http://localhost:11434")
         )
         model = model_name or os.environ.get("LLM_MODEL", "llama3.1")
+        _think_re = re.compile(r"<think>.*?</think>", re.DOTALL)
         try:
+            _set_progress(35, f"正在连接 Ollama · {model} ...")
             resp = requests.post(base + "/api/chat", json={
                 "model": model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                "stream": False,
+                "stream": True,
                 # 顶层 think:false 关闭思考模式（Qwen3.5 等带 thinking 的模型，
                 # 否则会先输出大量思考过程，导致正式内容为空或极短）
                 "think": False,
                 # num_predict=8192：九节带货报告含大量表格，通常需 6000-8000 token，
                 # 4096 会导致生成到中途（约第四节）被截断
                 "options": {"temperature": 0.3, "num_predict": 8192},
-            }, timeout=300)
+            }, stream=True, timeout=300)
             if resp.status_code == 200:
+                chunks = []
+                received = 0
+                for raw in resp.iter_lines(decode_unicode=True):
+                    if not raw:
+                        continue
+                    try:
+                        chunk = json.loads(raw)
+                    except Exception:
+                        continue
+                    if chunk.get("done"):
+                        break
+                    delta = chunk.get("message", {}).get("content", "") or ""
+                    if not delta:
+                        continue
+                    # 兜底：过滤模型可能泄露的思考块
+                    delta = _think_re.sub("", delta)
+                    if not delta.strip():
+                        continue
+                    chunks.append(delta)
+                    received += len(delta)
+                    # 章节检测：仅在累计文本中出现新 ### 标题时更新进度
+                    _update_chapter_progress("".join(chunks))
+                    # 字符流兜底：长时间无新章节时按已接收字符数补位，避免进度卡死
+                    est = 30 + min(received / 6000.0, 1.0) * 60
+                    if est > analyze_jobs.get(job_id, {}).get("progress", 0):
+                        _set_progress(est, analyze_jobs.get(job_id, {}).get("detail"))
+                content = "".join(chunks)
+                # 整体再清洗一次思考块
+                content = _think_re.sub("", content).strip()
+                _set_progress(95, "报告主体已完成，正在收尾...")
+                if not content:
+                    return {"error": "Ollama 返回内容为空（可能是模型未就绪或思考模式未关闭）",
+                            "available": True, "model": model}
+                return {"report": content, "available": True, "model": model}
+            # 非 200：退回非流式兜底
+            try:
                 odata = resp.json()
                 content = odata.get("message", {}).get("content", "") or ""
-                # 兜底：部分带思考模式的模型 content 为空但 thinking 有内容
-                if not content.strip():
-                    content = odata.get("message", {}).get("thinking", "") or ""
-                    # thinking 通常以 "Thinking Process:..." 开头，去掉思考前缀取正式回答
-                    idx = content.find("最终回答")
-                    if idx == -1:
-                        idx = content.find("Final Answer")
-                    if idx == -1:
-                        idx = content.find("<｜end▁of▁thinking｜>")
-                    if idx != -1:
-                        content = content[idx:]
-                return {"report": content, "available": True, "model": model}
-            return {"error": "Ollama HTTP " + str(resp.status_code) + ": " + resp.text[:300],
+                if content:
+                    return {"report": content, "available": True, "model": model}
+            except Exception:
+                pass
+            return {"error": "Ollama HTTP " + str(resp.status_code) + ": " + (resp.text or "")[:300],
                     "available": True, "model": model}
         except Exception as e:
             return {"error": "Ollama 连接失败（" + base + "）：" + str(e), "available": True}
@@ -1343,12 +1421,14 @@ def run_analysis(job_id, input_data, api_key, provider, ollama_base, model_name)
     try:
         analyze_jobs[job_id]["status"] = "analyzing"
         analyze_jobs[job_id]["progress"] = 30
+        analyze_jobs[job_id]["detail"] = "准备调用模型生成报告..."
         result = call_llm_analyze(
             input_data,
             api_key=api_key,
             provider=provider,
             ollama_base=ollama_base,
             model_name=model_name,
+            job_id=job_id,
         )
         analyze_jobs[job_id]["result"] = result
         analyze_jobs[job_id]["model"] = result.get("model", None)
@@ -1498,6 +1578,7 @@ def api_analyze_status(job_id):
         "job_id": job_id,
         "status": job["status"],
         "progress": job["progress"],
+        "detail": job.get("detail", ""),
         "error": job.get("error"),
     })
 
