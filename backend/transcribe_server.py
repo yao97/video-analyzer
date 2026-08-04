@@ -45,6 +45,8 @@ from flask_cors import CORS
 
 import zhconv  # 繁体→简体转换
 
+import db  # SQLite 持久化层（任务/分析结果落盘，重启不丢）
+
 
 
 # ── 懒加载 ──
@@ -89,9 +91,42 @@ def get_ffmpeg():
 
 # ── 任务存储 ──
 
-jobs = {}  # job_id -> {status, progress, result, error, current_chunk, ...}
+# 持久化：任务/结果写入 SQLite（backend/data/analyzer.db），重启后自动恢复
+db.init_db()
 
+jobs = {}  # job_id -> {status, progress, result, error, current_chunk, ...}
 analyze_jobs = {}  # job_id -> {status, progress, result, error, model}
+
+# 启动时从数据库恢复已完成任务（重启不丢历史）
+_jobs_restored = db.load_transcribe_jobs()
+if _jobs_restored:
+    jobs.update(_jobs_restored)
+    print(f"[DB] 已恢复 {len(_jobs_restored)} 个转写任务")
+
+_analyze_jobs_restored = db.load_analyze_jobs()
+if _analyze_jobs_restored:
+    analyze_jobs.update(_analyze_jobs_restored)
+    print(f"[DB] 已恢复 {len(_analyze_jobs_restored)} 个文案分析任务")
+
+
+def _persist_job(job_id):
+    """把内存中的转写任务状态同步写入数据库（任务创建/状态变更/完成时调用）"""
+    job = jobs.get(job_id)
+    if job:
+        try:
+            db.save_transcribe_job(job_id, job)
+        except Exception as e:
+            print(f"[DB] 转写任务持久化失败 {job_id}: {e}")
+
+
+def _persist_analyze_job(job_id):
+    """把内存中的文案分析任务状态同步写入数据库"""
+    job = analyze_jobs.get(job_id)
+    if job:
+        try:
+            db.save_analyze_job(job_id, job)
+        except Exception as e:
+            print(f"[DB] 文案分析持久化失败 {job_id}: {e}")
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "video_analyzer"
 
@@ -460,6 +495,7 @@ def run_audio_extract(job_id: str, video_path: str, duration: float):
             }
             jobs[job_id]["progress"] = 100
             jobs[job_id]["detail"] = "无音频"
+            _persist_job(job_id)  # 落库
             return
 
         # 音频就绪，等待用户选择模型
@@ -467,6 +503,7 @@ def run_audio_extract(job_id: str, video_path: str, duration: float):
         jobs[job_id]["progress"] = 20
         jobs[job_id]["detail"] = "音频提取完成，请选择识别模型开始转写"
         jobs[job_id]["wav_path"] = wav_path
+        _persist_job(job_id)  # 落库
         print(f"[Audio] job {job_id} 音频就绪: {wav_path}", flush=True)
 
     except Exception as e:
@@ -480,6 +517,7 @@ def run_audio_extract(job_id: str, video_path: str, duration: float):
         jobs[job_id]["status"] = "error"
         jobs[job_id]["error"] = str(e)
         jobs[job_id]["progress"] = 100
+        _persist_job(job_id)  # 落库
 
 
 def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_name: str = None):
@@ -539,6 +577,8 @@ def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_nam
         jobs[job_id]["status"] = "done"
         jobs[job_id]["progress"] = 100
         jobs[job_id]["detail"] = "转写完成"
+        jobs[job_id]["finished_at"] = time.time()
+        _persist_job(job_id)  # 落库：完成状态 + 结果
 
     except Exception as e:
         import traceback, datetime
@@ -556,6 +596,8 @@ def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_nam
             msg = "音频解码失败（可能是音频格式不支持，或视频无有效音轨/为静音视频）"
         jobs[job_id]["error"] = msg
         jobs[job_id]["progress"] = 100
+        jobs[job_id]["finished_at"] = time.time()
+        _persist_job(job_id)  # 落库：错误状态
 
     finally:
         _transcribe_semaphore.release()
@@ -751,6 +793,8 @@ def api_transcribe():
 
     }
 
+    _persist_job(job_id)  # 落库：任务创建即持久化，重启不丢
+
 
 
     # 上传后先只提取音频（不自动转写），提取完成状态变为 audio_ready，
@@ -871,6 +915,40 @@ def api_result(job_id):
 
 
     return jsonify({"job_id": job_id, "status": "done", "result": job["result"]})
+
+
+# ── 历史记录查询（SQLite 持久化）──
+
+@app.route("/api/history/transcribe", methods=["GET"])
+def api_history_transcribe():
+    """转写历史任务列表（持久化自 SQLite，重启不丢）"""
+    try:
+        limit = min(int(request.args.get("limit", 50)), 200)
+    except (TypeError, ValueError):
+        limit = 50
+    items = db.query_transcribe_history(limit)
+    return jsonify({"items": items, "total": len(items)})
+
+
+@app.route("/api/history/transcribe/<job_id>", methods=["GET"])
+def api_history_transcribe_detail(job_id):
+    """转写历史任务详情（含完整结果）"""
+    job = jobs.get(job_id) or db.load_transcribe_jobs().get(job_id)
+    if not job:
+        return jsonify({"error": "任务不存在"}), 404
+    return jsonify({"job_id": job_id, "status": "done", "result": job.get("result")})
+
+
+@app.route("/api/history/analysis", methods=["GET"])
+def api_history_analysis():
+    """智能分析历史（钩子/OCR/信息密度/视觉锚点）"""
+    job_id = (request.args.get("job_id") or "").strip() or None
+    try:
+        limit = min(int(request.args.get("limit", 100)), 300)
+    except (TypeError, ValueError):
+        limit = 100
+    items = db.query_analysis_results(job_id, limit)
+    return jsonify({"items": items, "total": len(items)})
 
 
 
@@ -1280,12 +1358,16 @@ def run_analysis(job_id, input_data, api_key, provider, ollama_base, model_name)
         else:
             analyze_jobs[job_id]["status"] = "done"
         analyze_jobs[job_id]["progress"] = 100
+        analyze_jobs[job_id]["finished_at"] = time.time()
+        _persist_analyze_job(job_id)  # 落库：完成/错误状态 + 结果
     except Exception as e:
         import traceback
         traceback.print_exc()
         analyze_jobs[job_id]["status"] = "error"
         analyze_jobs[job_id]["error"] = str(e)
         analyze_jobs[job_id]["progress"] = 100
+        analyze_jobs[job_id]["finished_at"] = time.time()
+        _persist_analyze_job(job_id)  # 落库
 
 
 @app.route("/api/analyze-copy", methods=["POST"])
@@ -1389,7 +1471,9 @@ def api_analyze_copy():
         "result": None,
         "error": None,
         "model": None,
+        "start_time": time.time(),
     }
+    _persist_analyze_job(job_id)  # 落库：任务创建即持久化
 
     thread = threading.Thread(
         target=run_analysis,
@@ -1625,6 +1709,11 @@ def api_hook_analysis():
     try:
         from media_analysis import analyze_hook
         result = analyze_hook(vpath, asr_segments=asr_segments, asr_text=asr_text)
+        if result and result.get("available", True) and "error" not in result:
+            try:
+                db.save_analysis_result(job_id or "unknown", "hook", result)
+            except Exception as _e:
+                print(f"[DB] 钩子分析结果持久化失败: {_e}")
         return jsonify(result)
     except ImportError as ie:
         return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
@@ -1659,6 +1748,11 @@ def api_ocr_analysis():
     try:
         from p1_analysis import analyze_ocr
         result = analyze_ocr(vpath, sample_fps=sample_fps)
+        if result and result.get("available", True) and "error" not in result:
+            try:
+                db.save_analysis_result(job_id or "unknown", "ocr", result)
+            except Exception as _e:
+                print(f"[DB] OCR 结果持久化失败: {_e}")
         return jsonify(result)
     except ImportError as ie:
         return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
@@ -1702,6 +1796,11 @@ def api_info_density():
             asr_text=asr_text,
             asr_segments=asr_segments,
         )
+        if result and result.get("available", True) and "error" not in result:
+            try:
+                db.save_analysis_result(job_id or "unknown", "info_density", result)
+            except Exception as _e:
+                print(f"[DB] 信息密度结果持久化失败: {_e}")
         return jsonify(result)
     except ImportError as ie:
         return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200
@@ -1726,6 +1825,11 @@ def api_visual_anchor():
     try:
         from p1_analysis import analyze_visual_anchor
         result = analyze_visual_anchor(vpath)
+        if result and result.get("available", True) and "error" not in result:
+            try:
+                db.save_analysis_result(job_id or "unknown", "visual_anchor", result)
+            except Exception as _e:
+                print(f"[DB] 视觉锚点结果持久化失败: {_e}")
         return jsonify(result)
     except ImportError as ie:
         return jsonify({"available": False, "error": f"依赖缺失: {ie}"}), 200

@@ -17,6 +17,9 @@ exports/
 *.wav
 *.log
 
+# ── SQLite 数据库 ──
+backend/data/
+
 # ── 临时调试脚本（开发期产物，不入库） ──
 _*.py
 _*.js
