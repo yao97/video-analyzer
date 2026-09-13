@@ -309,8 +309,6 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
   <div id="featureBadges" class="badges-row hidden">
     <div class="badge wait" id="badgeColor"><span class="icon">&#127912;</span><span>画面分析</span><span id="badgeColorText">等待</span></div>
     <div class="badge wait" id="badgeSpeech"><span class="icon">&#127911;</span><span>语音转写</span><span id="badgeSpeechText">等待</span></div>
-    <div class="badge wait" id="badgeContent"><span class="icon">&#127981;</span><span>内容识别</span><span id="badgeContentText">等待</span></div>
-    <div class="badge wait" id="badgeCopy"><span class="icon">&#128221;</span><span>文案生成</span><span id="badgeCopyText">等待</span></div>
   </div>
 
   <!-- Metrics -->
@@ -468,7 +466,7 @@ body.video-active #mainLayout { display: flex !important; flex-direction: row !i
         <div class="section-title">&#128270; <span>短视频深度拆解报告</span> <span id="deepReportStatus" style="font-size:0.72rem;color:#6b7084;font-weight:400;"></span></div>
         <div id="deepStep1" style="margin-bottom:1rem;padding:0.85rem;background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;">
           <div style="font-size:0.76rem;color:#6b7084;line-height:1.7;margin-bottom:0.8rem;">
-            将视频画面分析 + 语音转写 + 元数据打包发送给大语言模型，生成「一句话内核 / 三大可执行论点 / 陷阱反例 / 作者局限 / 三句话」结构化拆解。<br>
+            将视频画面分析 + 语音转写 + 元数据打包发送给大语言模型，按九节结构生成深度拆解报告：一句话总结 → 原文基础信息 → 深度反向拆解 → 口播逐段拆解 → 分镜头拆解 → 5A 人群流转 → 爆款文案库 → 可复刻对标行业 → 团队落地执行要点。<br>
             API Key 仅保存在浏览器内存，后端不存储。
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -1306,8 +1304,6 @@ async function processFile(file) {
 
   setBadge('badgeColor','running','分析中');
   setBadge('badgeSpeech','wait','等待');
-  setBadge('badgeContent','wait','等待');
-  setBadge('badgeCopy','wait','等待');
 
   // Reset step indicators
   ['stepUpload','stepExtract','stepTranscribe','stepDone'].forEach((id,i) => setStep(id,'wait'));
@@ -1762,7 +1758,7 @@ async function reTranscribe() {
 
 
 // ═══════════════════════════════════════════════════════════════
-// 深度分析（一句话内核/三大论点/陷阱反例/作者局限/三句话）
+// 深度分析（九节结构化报告：一句话总结 → … → 团队落地执行要点）
 // ═══════════════════════════════════════════════════════════════
 function onProviderChange() {
   const p = $('deepProvider').value;
@@ -2101,10 +2097,10 @@ function _icon(name, size) {
   return '<svg class="icon" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (p[name] || '') + '</svg>';
 }
 
-// 从深度分析 markdown 提取"一句话内核"（### 一句话内核 后的第一段）
+// 从深度分析 markdown 提取"一句话总结"（后端标题为 ### 一句话总结（一行））
 function _extractOneLiner(md) {
   if (!md) return '';
-  const m = md.match(/###\s*一句话内核\s*\n([^\n#]+)/);
+  const m = md.match(/###\s*一句话总结[^\n]*\n+\s*([^\n#]+)/);
   return m ? m[1].trim() : '';
 }
 

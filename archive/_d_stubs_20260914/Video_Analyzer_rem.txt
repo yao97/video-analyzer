@@ -1,0 +1,78 @@
+整理清楚了：
+
+---
+
+## 项目全路径一览
+
+### 🏠 唯一真相源
+
+```
+C:\Users\EDY\Projects\video-analyzer\              ← 主项目根目录
+│
+├── start_backend.bat                               ← 双击启动后端
+│
+├── backend/                                        ← 后端（点击 start_backend.bat 启动）
+│   ├── transcribe_server.py                        ← 📌 实际运行的 Flask 服务（API + 直接 serve 前端）
+│   ├── app/                                        ← v2.0 FastAPI 源码（Docker 版，已就绪待切换）
+│   │   ├── main.py                                 ← FastAPI 入口
+│   │   ├── api/v1/                                 ← API 路由
+│   │   ├── core/ config.py                         ← 配置
+│   │   ├── db/ services/ workers/
+│   │   └── utils/
+│   ├── alembic/                                    ← 数据库迁移（v2.0 用）
+│   ├── docker-compose.yml Dockerfile               ← v2.0 Docker 编排（备用）
+│   └── scripts/ requirements.txt
+│
+├── frontend/                                       ← 前端（Flask 直接 serve）
+│   ├── web_player.html                             ← 📌 源文件（4 Tab，Flask 返回的页面）
+│   ├── web_player_v3.html                          ← 构建产物（build_v3.py 生成）
+│   ├── build_v3.py                                 ← 自校验构建脚本
+│   ├── fix_deep_analysis.py                        ← 深度拆解 patch 记录
+│   └── chart.umd.min.js                            ← 图表库（当前 Tab 未用，保留备查）
+│
+├── docs/                                           ← 文档
+│   ├── 项目功能介绍.md
+│   ├── 项目优化建议.md
+│   └── 后端系统介绍手册.md
+│
+├── archive/                                        ← 历史归档（不动）
+│   └── legacy-tfxjjhfnjialcuju/
+│
+└── README.md
+```
+
+### ⚙️ 运行依赖
+
+| 用途 | 路径 |
+|------|------|
+| **Python 虚拟环境** | `C:\Users\EDY\WorkBuddy\2026-07-28-15-24-59\venv\` |
+| **启动入口** | `start_backend.bat` → 启动 8766 端口的 Flask 服务 |
+
+### 📝 WorkBuddy 工作会话（文档 + 开发记录）
+
+| 路径 | 内容 |
+|------|------|
+| `C:\Users\EDY\WorkBuddy\2026-07-28-15-06-53\` | **当前会话** — 项目功能介绍、优化建议等文档 |
+| `C:\Users\EDY\WorkBuddy\2026-07-28-15-24-59\` | Python venv + 后端开发 |
+| `C:\Users\EDY\WorkBuddy\2026-07-28-15-36-26\` | v2.0 重构文档 + GBK 修复脚本 |
+
+### 🗄️ 旧 QClaw 工作区（已归档，不再使用）
+
+| 路径 | 说明 |
+|------|------|
+| `.qclaw/workspace-3010ll10ltqof1lk` | 前端 HTML 快照（深度拆解版来源） |
+| `.qclaw/workspace-tfxjjhfnjialcuju` | 旧主开发区（已归档到 `archive/`） |
+| `.qclaw/workspace-54nuktoh8cd83kjj` | 其它 Agent（无关） |
+| `.qclaw/workspace-attestations` | 其它 Agent（无关） |
+
+---
+
+### 一行启动
+
+```bash
+# 双击 start_backend.bat，或：
+cd C:\Users\EDY\Projects\video-analyzer\backend
+C:\Users\EDY\WorkBuddy\2026-07-28-15-24-59\venv\Scripts\python.exe transcribe_server.py --host 0.0.0.0 --port 8766
+```
+
+启动后浏览器访问 `http://127.0.0.1:8766/` 即前端页面。

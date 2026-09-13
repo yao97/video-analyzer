@@ -191,10 +191,6 @@ def favicon():
     return Response(svg, mimetype="image/svg+xml")
 
 
-@app.route("/chart.umd.min.js")
-def chart_js():
-    return send_from_directory(str(FRONTEND_DIR), "chart.umd.min.js")
-
 @app.route("/jszip.min.js")
 def jszip_js():
     return send_from_directory(str(FRONTEND_DIR), "jszip.min.js")

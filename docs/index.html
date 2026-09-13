@@ -145,7 +145,7 @@
     <div class="badge">OPEN SOURCE · LOCAL-FIRST · PRIVATE</div>
     <h1>Video Content Analyzer <span class="grad">短视频竞品反向拆解工具</span></h1>
     <p class="subtitle">
-      上传竞品短视频 → Whisper 语音转写 → LLM 深度文案拆解 → 自动生成<b>九节结构化报告</b>（含分镜头表、口播拆解、爆款文案库），直接指导编导团队复刻拍摄。
+      上传竞品短视频 → Qwen3-ASR 本地转写 → 本地智能分析（钩子/视觉锚点/信息密度/OCR）→ LLM 深度文案拆解 → 自动生成<b>九节结构化报告</b>（含分镜头表、口播拆解、爆款文案库），直接指导编导团队复刻拍摄。
     </p>
     <div class="header-actions">
       <a class="btn btn-primary" href="demo.html">🎬 在线演示</a>
@@ -170,15 +170,15 @@
   <div class="container">
     <div class="sec-title">Pipeline</div>
     <h2 class="sec-head">一条流水线，从视频到可执行报告</h2>
-    <p class="sec-desc">全流程本地优先：画面分析在浏览器完成，语音转写由本地 Whisper 执行，深度分析可对接本地 Ollama 或云端大模型。</p>
+    <p class="sec-desc">全流程本地优先：画面分析在浏览器完成，语音转写与智能分析由本地 Qwen3-ASR / 本地模型执行，深度分析可对接本地 Ollama 或云端大模型。</p>
     <div class="pipeline">
       <div class="step"><div class="icon">📤</div><div class="name">上传视频</div><div class="desc">拖拽上传，自动识别横竖屏与元数据</div></div>
       <div class="step-arrow">→</div>
       <div class="step"><div class="icon">🎞️</div><div class="name">关键帧抽取</div><div class="desc">Canvas 逐帧分析 RGB/亮度/运动</div></div>
       <div class="step-arrow">→</div>
-      <div class="step"><div class="icon">🧠</div><div class="name">内容识别</div><div class="desc">9 种内容类型特征权重评分</div></div>
+      <div class="step"><div class="icon">⚡</div><div class="name">智能分析</div><div class="desc">前3秒钩子 / 视觉锚点 / 信息密度 / OCR</div></div>
       <div class="step-arrow">→</div>
-      <div class="step"><div class="icon">🗣️</div><div class="name">语音转写</div><div class="desc">Whisper 分片并行转写 + 关键词提取</div></div>
+      <div class="step"><div class="icon">🗣️</div><div class="name">语音转写</div><div class="desc">Qwen3-ASR 本地转写 + 关键词提取</div></div>
       <div class="step-arrow">→</div>
       <div class="step"><div class="icon">📊</div><div class="name">深度分析</div><div class="desc">LLM 生成九节结构化拆解报告</div></div>
     </div>
@@ -208,19 +208,20 @@
   <div class="container">
     <div class="sec-title">Features</div>
     <h2 class="sec-head">核心功能</h2>
-    <p class="sec-desc">四大 Tab 覆盖「分析 → 拆解 → 报告」全链路，每个产出都可直接用于编导工作流。</p>
+    <p class="sec-desc">六大 Tab 覆盖「转写 → 智能分析 → 拆解 → 报告 → 历史」全链路，每个产出都可直接用于编导工作流。</p>
 
     <div class="feat">
       <div class="feat-text">
-        <h3>🗣️ 语音转写 · Whisper</h3>
-        <p>按 15 秒分片 + 多线程并行转写，实时进度百分比与剩余时间预估；输出带时间戳的分段文本，自动提取高频词 / 动作词 / 情绪词 / 产品词。</p>
-        <span class="tag">tiny / base / small / medium 四档模型</span>
-        <span class="tag">CPU/GPU 自动检测</span>
+        <h3>🗣️ 语音转写 · Qwen3-ASR</h3>
+        <p>Qwen3-ASR-1.7B 本地大模型转写，DirectML/Vulkan GPU 加速、字级时间戳；实时进度百分比与剩余时间预估；输出分段文本并自动提取高频词 / 动作词 / 情绪词 / 产品词。</p>
+        <span class="tag">Qwen3-ASR-1.7B（本地）</span>
+        <span class="tag">GPU DirectML / Vulkan</span>
       </div>
       <div class="feat-visual">
-<pre><span class="c"># 上传 → 转写 → 结果，三步异步</span>
-POST /api/transcribe          <span class="c">→ job_id</span>
-GET  /api/status/{job_id}     <span class="c">→ extracting / transcribing / done</span>
+<pre><span class="c"># 上传 → 提取音频 → 启动转写 → 结果</span>
+POST /api/transcribe          <span class="c">→ job_id（提取音频）</span>
+POST /api/transcribe-start    <span class="c">→ 启动 Qwen3-ASR</span>
+GET  /api/status/{job_id}     <span class="c">→ extracting / audio_ready / transcribing / done</span>
 GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
 
 <span class="c"># 示例输出</span>
@@ -290,9 +291,9 @@ GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
     <div class="sec-title">Tech Stack</div>
     <h2 class="sec-head">技术栈</h2>
     <div class="pill-row">
-      <span class="pill hl">Flask 3</span><span class="pill">Whisper (openai)</span><span class="pill">PyTorch CPU</span>
-      <span class="pill">soundfile / imageio-ffmpeg</span><span class="pill">jieba 分词</span><span class="pill">zhconv 简繁</span>
-      <span class="pill">原生 HTML/CSS/JS</span><span class="pill">Chart.js</span><span class="pill">Docker / Compose</span>
+      <span class="pill hl">Flask 3</span><span class="pill">Qwen3-ASR-1.7B</span><span class="pill">ONNX + GGUF</span>
+      <span class="pill">onnxruntime-directml</span><span class="pill">paddleocr / mediapipe</span><span class="pill">jieba 分词</span>
+      <span class="pill">原生 HTML/CSS/JS</span><span class="pill">JSZip</span><span class="pill">SQLite</span>
       <span class="pill">SiliconFlow API</span><span class="pill">DeepSeek API</span><span class="pill">Ollama</span>
     </div>
     <div class="table-wrap">
@@ -300,10 +301,12 @@ GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
         <tr><th>层面</th><th>技术</th><th>说明</th></tr>
         <tr><td>后端框架</td><td>Flask 3 + threading</td><td class="muted">单进程同时 serve API 与前端静态页</td></tr>
         <tr><td>任务模型</td><td>内存 dict + 线程锁</td><td class="muted">异步 job：POST 创建 → 前端 2s 轮询状态</td></tr>
-        <tr><td>语音转写</td><td>openai-whisper</td><td class="muted">15s 分片并行，tiny→medium 四档模型</td></tr>
+        <tr><td>语音转写</td><td>Qwen3-ASR-1.7B（ONNX+GGUF）</td><td class="muted">本地大模型，DirectML/Vulkan GPU 加速、字级时间戳</td></tr>
+        <tr><td>本地智能分析</td><td>media_analysis / p1_analysis</td><td class="muted">钩子 / 视觉锚点 / 信息密度 / 字幕 OCR</td></tr>
         <tr><td>深度分析</td><td>LLM API</td><td class="muted">硅基流动 / DeepSeek / Ollama / 智谱</td></tr>
-        <tr><td>前端</td><td>原生 HTML/CSS/JS</td><td class="muted">零构建，4 Tab 单文件</td></tr>
-        <tr><td>部署</td><td>Docker Compose</td><td class="muted">api + 可选 ollama 服务，Whisper 模型卷缓存</td></tr>
+        <tr><td>持久化</td><td>SQLite（db.py）</td><td class="muted">转写与分析历史，重启不丢</td></tr>
+        <tr><td>前端</td><td>原生 HTML/CSS/JS</td><td class="muted">零构建，6 Tab 单文件</td></tr>
+        <tr><td>部署</td><td>python / start_backend.bat</td><td class="muted">单体 Flask（8766）；需 DirectX 12 GPU</td></tr>
       </table>
     </div>
   </div>
@@ -317,13 +320,13 @@ GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
     <p class="sec-desc">当前运行版为单体 Flask 服务，单命令启动、零外部依赖；可选的 Docker Compose 编排支持 API + Ollama 容器化部署。</p>
     <div class="arch">
       <div class="arch-row">
-        <div class="arch-node" style="min-width:180px">🌐 浏览器前端<br><span style="color:var(--muted);font-size:12px">web_player.html · 4 Tab</span></div>
+        <div class="arch-node" style="min-width:180px">🌐 浏览器前端<br><span style="color:var(--muted);font-size:12px">web_player.html · 6 Tab</span></div>
         <div class="arch-arrow">⬅➡</div>
         <div class="arch-node hl" style="min-width:200px">🐍 Flask 后端 :8766<br><span style="color:var(--muted);font-size:12px">transcribe_server.py</span></div>
       </div>
       <div class="arch-label">· 上传 / 转写 / 分析 / 前端静态服务 ·</div>
       <div class="arch-row" style="margin-top:18px">
-        <div class="arch-node" style="min-width:170px">🎤 Whisper 模型<br><span style="color:var(--muted);font-size:12px">本地 CPU 推理</span></div>
+        <div class="arch-node" style="min-width:170px">🎤 Qwen3-ASR 模型<br><span style="color:var(--muted);font-size:12px">本地 GPU 推理</span></div>
         <div class="arch-node" style="min-width:170px">🔑 LLM 服务商<br><span style="color:var(--muted);font-size:12px">SF / DeepSeek / Ollama / 智谱</span></div>
         <div class="arch-node" style="min-width:150px">📦 临时文件<br><span style="color:var(--muted);font-size:12px">系统 temp，用完即删</span></div>
       </div>
@@ -365,12 +368,15 @@ docker compose up -d --build</pre>
     <pre>
 video-analyzer/
 ├── backend/
-│   ├── transcribe_server.py   <span class="c"># 单体 Flask：转写 + 深度分析 + serve 前端</span>
+│   ├── transcribe_server.py   <span class="c"># 单体 Flask：转写 + 分析 + serve 前端</span>
+│   ├── db.py                  <span class="c"># SQLite 持久化（历史记录）</span>
+│   ├── media_analysis.py      <span class="c"># 钩子 / 能量 / 人脸</span>
+│   ├── p1_analysis.py         <span class="c"># OCR / 信息密度 / 视觉锚点</span>
 │   └── requirements.txt
 ├── frontend/
-│   ├── web_player.html        <span class="c"># 前端唯一真相源（4 Tab）</span>
+│   ├── web_player.html        <span class="c"># 前端唯一真相源（6 Tab）</span>
 │   └── jszip.min.js
-├── Dockerfile                 <span class="c"># Flask + Whisper + ffmpeg</span>
+├── Dockerfile                 <span class="c"># Flask + Qwen3-ASR + ffmpeg</span>
 ├── docker-compose.yml         <span class="c"># api + 可选 ollama</span>
 ├── docs/                      <span class="c"># 三份完整文档（功能/优化/后端手册）</span>
 ├── .env.example               <span class="c"># 部署环境变量模板</span>
@@ -381,7 +387,7 @@ video-analyzer/
 <footer>
   <div class="container">
     <p><a href="https://github.com/yao97/video-analyzer">github.com/yao97/video-analyzer</a> · Video Content Analyzer · 短视频竞品反向拆解</p>
-    <p style="margin-top:6px">Whisper 转写 · LLM 深度拆解 · 九节结构化报告</p>
+    <p style="margin-top:6px">Qwen3-ASR 本地转写 · 本地智能分析 · LLM 九节深度拆解</p>
   </div>
 </footer>
 
