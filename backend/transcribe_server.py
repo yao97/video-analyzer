@@ -666,12 +666,16 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
     except ValueError:
         qwen_temp = 0.3
 
+    # ⚠️ memory_chunks 必须与 n_ctx 匹配，否则 KV 缓存溢出：
+    #    n_ctx=2048，chunk=40s≈800 token；memory_chunks=1 → 800(当前)+800(记忆)=1600 ✅
+    #    memory_chunks=2 → 800+2×800=2400 > 2048 ❌ → 第 3 段起解码失败并硬崩溃（长视频必现）。
+    #    （引擎 schema.py 文档化的安全值即 memory_num=1。）
     res = _qwen3_asr_gguf_engine.asr(
         audio=audio,
         context=qwen_context,
         language="Chinese",
         chunk_size_sec=40.0,
-        memory_chunks=2,
+        memory_chunks=1,
         temperature=qwen_temp,
     )
 

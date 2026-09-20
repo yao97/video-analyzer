@@ -126,7 +126,13 @@ class QwenASREngine:
         
         # 每次解码使用新的随机种子
         seed = int(np.random.randint(0, 2**31 - 1))
-        sampler = llama.LlamaSampler(temperature=temperature, seed=seed)
+        # 复读抑制：repeat_penalty=1.1（默认 1.0 = 关闭）。低温度(0.3)下无惩罚极易固化复读。
+        sampler = llama.LlamaSampler(
+            temperature=temperature,
+            repeat_penalty=1.1,
+            penalty_last_n=64,
+            seed=seed,
+        )
         last_sampled_token = sampler.sample(self.ctx.ptr)
         for _ in range(512): # Max new tokens per chunk
             if last_sampled_token in [self.model.eos_token, self.ID_IM_END]:
@@ -145,7 +151,18 @@ class QwenASREngine:
                     stable_text_acc += piece
             
             # 熔断检查：检测重复循环
-            if len(stable_tokens) > 15:
+            # 原判据「最近 15 token 不同值 ≤3」过严，像"我就是说，"这类 5 符号周期会逃逸；
+            # 改为优先检测周期 2..8 的"连续重复 3 次"，覆盖面更广。
+            if len(stable_tokens) >= 24:
+                tail = stable_tokens[-24:]
+                for p in range(2, 9):
+                    if tail[-p * 3:] == tail[-p:] * 3:
+                        result.is_aborted = True
+                        break
+                if result.is_aborted:
+                    break
+            # 粗粒度兜底（极短周期，如单字/双字卡死）
+            elif len(stable_tokens) > 15:
                 if len(set(stable_tokens[-15:])) <= 3:
                     result.is_aborted = True
                     break
