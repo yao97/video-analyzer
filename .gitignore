@@ -51,3 +51,4 @@ qwen3_asr_gguf_src/**/bin/
 
 # ── Docker 本地覆盖 ──
 docker-compose.override.yml
+backend/logs/
