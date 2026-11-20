@@ -222,6 +222,7 @@
 POST /api/transcribe          <span class="c">→ job_id（提取音频）</span>
 POST /api/transcribe-start    <span class="c">→ 启动 Qwen3-ASR</span>
 GET  /api/status/{job_id}     <span class="c">→ extracting / audio_ready / transcribing / done</span>
+<span class="c"># 附带 current_chunk：逐词实时文本（转写中可见）+ chunk_chars 字符数</span>
 GET  /api/result/{job_id}     <span class="c">→ segments[] + keywords{}</span>
 
 <span class="c"># 示例输出</span>

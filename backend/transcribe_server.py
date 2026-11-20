@@ -29,6 +29,8 @@ import uuid
 
 import json
 
+import sys
+
 import threading
 
 import subprocess
@@ -599,6 +601,60 @@ def run_transcribe_with_engine(job_id: str, engine: str = "qwen3_asr", model_nam
         _transcribe_semaphore.release()
 
 
+class _JobStreamTee:
+    """把引擎打印到 stdout 的逐词输出累积进 job 状态，供 /api/status 实时暴露。
+
+    背景：引擎 `_decode(streaming=True)`（默认开）会**逐 token** 把解码结果
+    `print(..., end='')` 到 stdout，标点后自动补换行 —— 也就是 stdout 上本来就有
+    一路实时文本流。但服务端 stdout 是否被重定向到文件**不可控**（自动拉起 /
+    以服务方式启动时可能指向控制台，实测就抓不到），所以不依赖日志文件，
+    而是在转写期间把 sys.stdout 换成这个 tee：既照常写原 stdout（保留既有日志行为），
+    又把内容累积进 `jobs[job_id]["current_chunk"]`。
+
+    不改第三方引擎代码；`print` 在调用时才解析 sys.stdout，所以替换立即生效。
+    """
+
+    _STOP = "📊 性能统计"      # 引擎收尾会打印统计块 → 到此冻结，别把统计混进正文
+
+    def __init__(self, job_id, real):
+        self.job_id = job_id
+        self.real = real
+        self.frozen = False
+        self.buf = []
+        j = jobs.get(job_id)
+        if j is not None:
+            j["current_chunk"] = ""
+            j["chunk_chars"] = 0
+
+    def write(self, s):
+        if not s:
+            return 0
+        if not self.frozen:
+            self.buf.append(s)
+            blob = "".join(self.buf)
+            if self._STOP in blob:
+                blob = blob.split(self._STOP, 1)[0]
+                self.frozen = True
+            j = jobs.get(self.job_id)
+            if j is not None:
+                j["current_chunk"] = blob
+                j["chunk_chars"] = len(blob)
+        try:
+            self.real.write(s)
+        except Exception:
+            pass
+        return len(s)
+
+    def flush(self):
+        try:
+            self.real.flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        return False
+
+
 def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
     """使用 Qwen3-ASR-GGUF 本地引擎转写（ONNX Encoder + GGUF Decoder, DirectML/Vulkan 加速）。
 
@@ -617,7 +673,9 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
             if _qwen3_asr_gguf_engine is None:
                 print(f"[Qwen3-ASR] 初始化 GGUF 引擎（模型目录: {model_dir}）...", flush=True)
                 t0 = time.time()
-                import sys
+                # 注意：这里**不要**再 `import sys` —— 那会让 sys 变成本函数的局部变量，
+                # 而本函数后面要用 sys.stdout 做流式 tee；引擎已初始化时这句不执行，
+                # 就会抛 UnboundLocalError。模块顶层已 import sys，直接用即可。
                 if gguf_src not in sys.path:
                     sys.path.insert(0, gguf_src)
                 from qwen_asr_gguf.inference import QwenASREngine, ASREngineConfig, AlignerConfig
@@ -626,6 +684,9 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
                     model_dir=model_dir,
                     onnx_provider='DML',
                     llm_use_gpu=True,
+                    # 🔧 n_ctx 2048→4096：消除长视频 KV 缓存溢出导致的 GGML_ASSERT 硬崩溃
+                    #    （n_ctx=2048 + memory_chunks=1 时部分长片 token 数逼近上限，解码越界）。
+                    n_ctx=4096,
                     enable_aligner=True,
                     # 显式指定与下载文件匹配的文件名（int4/q4_k 量化版）
                     encoder_frontend_fn='qwen3_asr_encoder_frontend.int4.onnx',
@@ -634,6 +695,8 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
                     align_config=AlignerConfig(
                         onnx_provider='DML',
                         llm_use_gpu=True,
+                        # 🔧 与 ASR 解码器保持一致，避免 Aligner 侧同样溢出
+                        n_ctx=4096,
                         model_dir=model_dir,
                         encoder_frontend_fn='qwen3_aligner_encoder_frontend.int4.onnx',
                         encoder_backend_fn='qwen3_aligner_encoder_backend.int4.onnx',
@@ -667,17 +730,24 @@ def transcribe_qwen3_asr(wav_path: str, job_id: str, model_name: str = None):
         qwen_temp = 0.3
 
     # ⚠️ memory_chunks 必须与 n_ctx 匹配，否则 KV 缓存溢出：
-    #    n_ctx=2048，chunk=40s≈800 token；memory_chunks=1 → 800(当前)+800(记忆)=1600 ✅
-    #    memory_chunks=2 → 800+2×800=2400 > 2048 ❌ → 第 3 段起解码失败并硬崩溃（长视频必现）。
-    #    （引擎 schema.py 文档化的安全值即 memory_num=1。）
-    res = _qwen3_asr_gguf_engine.asr(
-        audio=audio,
-        context=qwen_context,
-        language="Chinese",
-        chunk_size_sec=40.0,
-        memory_chunks=1,
-        temperature=qwen_temp,
-    )
+    #    n_ctx=4096（已上调），chunk=40s≈800 token；memory_chunks=1 → 800+800=1600 ✅ 余量充足
+    #    memory_chunks=2 → 800+1600=2400 < 4096 ✅ 亦安全（原 n_ctx=2048 时 2400>2048 才崩）。
+    #    （引擎 schema.py 文档化的安全值即 memory_num=1；此处 n_ctx 在服务端显式覆盖为 4096。）
+    # 逐词流式输出：把引擎 stdout 的 token 流同时累积进 job 状态（见 _JobStreamTee）
+    _tee = _JobStreamTee(job_id, sys.stdout)
+    _old_stdout = sys.stdout
+    sys.stdout = _tee
+    try:
+        res = _qwen3_asr_gguf_engine.asr(
+            audio=audio,
+            context=qwen_context,
+            language="Chinese",
+            chunk_size_sec=40.0,
+            memory_chunks=1,
+            temperature=qwen_temp,
+        )
+    finally:
+        sys.stdout = _old_stdout
 
     full_text = res.text or ""
     segments = []
