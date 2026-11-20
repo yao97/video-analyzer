@@ -63,6 +63,14 @@ try {
 if ($state -eq 'Running') {
     Write-Log 'service is Running but not answering -> restart (assumed hang)'
     $null = & $nssm restart $svc 2>&1
+} elseif ($state -eq 'Paused') {
+    # nssm 的 Paused 状态 = "应用退出过快，nssm 已停止自动重启"。
+    # 此时 `nssm start` 会被直接忽略（实测 2026-11-20 17:24 连试三次全部 STILL DOWN），
+    # 必须先 stop 解除 Paused，再 start 才能真正把服务拉起来。
+    Write-Log 'service state = Paused -> stop then start'
+    $null = & $nssm stop $svc 2>&1
+    Start-Sleep -Seconds 5
+    $null = & $nssm start $svc 2>&1
 } else {
     Write-Log ("service state = " + $state + " -> start")
     $null = & $nssm start $svc 2>&1
